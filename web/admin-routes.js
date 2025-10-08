@@ -1,31 +1,69 @@
 const express = require('express');
 const router = express.Router();
+const bcrypt = require('bcryptjs');
 const db = require('./database');
 
+// Usuários de fallback (para compatibilidade)
+const fallbackUsers = {
+  admin: process.env.DEFAULT_ADMIN_PASSWORD || 'admin123',
+  jacbdias: process.env.JACBDIAS_ADMIN_PASSWORD || 'suaSenhaForte123'
+};
+
+async function ensureFallbackAdmin(username, password) {
+  const existing = await db.getAdminUserByUsername(username);
+
+  if (existing) {
+    return existing;
+  }
+
+  const passwordHash = await bcrypt.hash(password, 10);
+  return db.createAdminUser(username, passwordHash);
+}
+
 // Middleware de autenticação com usuário e senha
-const adminAuth = (req, res, next) => {
+const adminAuth = async (req, res, next) => {
   const authHeader = req.headers.authorization;
-  
-  // Usuários e senhas autorizados
-  const validUsers = {
-    'admin': 'admin123',
-    'jacbdias': 'suaSenhaForte123',
-    // Adicione mais usuários aqui
-  };
-  
+
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
     return res.status(401).json({ error: 'Não autorizado' });
   }
-  
-  // Formato esperado: "Bearer usuario:senha"
+
   const credentials = authHeader.replace('Bearer ', '');
-  const [username, password] = credentials.split(':');
-  
-  if (validUsers[username] && validUsers[username] === password) {
-    req.user = username; // Armazena usuário na requisição
-    next();
-  } else {
-    res.status(401).json({ error: 'Credenciais inválidas' });
+  const separatorIndex = credentials.indexOf(':');
+
+  if (separatorIndex === -1) {
+    return res.status(401).json({ error: 'Formato de credenciais inválido' });
+  }
+
+  const username = credentials.slice(0, separatorIndex);
+  const password = credentials.slice(separatorIndex + 1);
+
+  try {
+    const adminUser = await db.getAdminUserByUsername(username);
+
+    if (adminUser) {
+      const matches = await bcrypt.compare(password, adminUser.password_hash);
+
+      if (matches) {
+        req.user = { id: adminUser.id, username: adminUser.username };
+        await db.touchAdminLastLogin(adminUser.id);
+        return next();
+      }
+
+      return res.status(401).json({ error: 'Credenciais inválidas' });
+    }
+
+    if (fallbackUsers[username] && fallbackUsers[username] === password) {
+      const created = await ensureFallbackAdmin(username, password);
+      req.user = { id: created.id, username: created.username };
+      await db.touchAdminLastLogin(created.id);
+      return next();
+    }
+
+    return res.status(401).json({ error: 'Credenciais inválidas' });
+  } catch (error) {
+    console.error('Erro na autenticação de admin:', error);
+    return res.status(500).json({ error: 'Erro na autenticação' });
   }
 };
 
@@ -36,6 +74,108 @@ router.get('/stats', adminAuth, async (req, res) => {
   try {
     const stats = await db.getStats();
     res.json(stats);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ============== ADMIN USERS ==============
+
+const sanitizeAdmin = (admin) => ({
+  id: admin.id,
+  username: admin.username,
+  created_at: admin.created_at,
+  updated_at: admin.updated_at,
+  last_login: admin.last_login
+});
+
+// Listar admins
+router.get('/admins', adminAuth, async (req, res) => {
+  try {
+    const admins = await db.listAdminUsers();
+    res.json(admins.map(sanitizeAdmin));
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Criar novo admin
+router.post('/admins', adminAuth, async (req, res) => {
+  try {
+    const { username, password } = req.body;
+
+    if (!username || !password) {
+      return res.status(400).json({ error: 'Informe usuário e senha' });
+    }
+
+    if (password.length < 8) {
+      return res.status(400).json({ error: 'A senha deve ter pelo menos 8 caracteres' });
+    }
+
+    const existing = await db.getAdminUserByUsername(username);
+
+    if (existing) {
+      return res.status(409).json({ error: 'Usuário já cadastrado' });
+    }
+
+    const passwordHash = await bcrypt.hash(password, 10);
+    const admin = await db.createAdminUser(username, passwordHash);
+
+    res.status(201).json({ success: true, admin: sanitizeAdmin(admin) });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Atualizar senha do admin
+router.put('/admins/:id', adminAuth, async (req, res) => {
+  try {
+    const { password } = req.body;
+    const { id } = req.params;
+
+    if (!password) {
+      return res.status(400).json({ error: 'Informe a nova senha' });
+    }
+
+    if (password.length < 8) {
+      return res.status(400).json({ error: 'A senha deve ter pelo menos 8 caracteres' });
+    }
+
+    const passwordHash = await bcrypt.hash(password, 10);
+    const updated = await db.updateAdminUserPassword(id, passwordHash);
+
+    if (!updated) {
+      return res.status(404).json({ error: 'Administrador não encontrado' });
+    }
+
+    res.json({ success: true, admin: sanitizeAdmin(updated) });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Remover admin
+router.delete('/admins/:id', adminAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const adminId = parseInt(id, 10);
+
+    if (Number.isNaN(adminId)) {
+      return res.status(400).json({ error: 'ID inválido' });
+    }
+
+    if (req.user && req.user.id === adminId) {
+      return res.status(400).json({ error: 'Você não pode remover o usuário atualmente logado' });
+    }
+
+    const totalAdmins = await db.countAdminUsers();
+
+    if (totalAdmins <= 1) {
+      return res.status(400).json({ error: 'Não é possível remover o último administrador' });
+    }
+
+    await db.deleteAdminUser(adminId);
+    res.json({ success: true });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
