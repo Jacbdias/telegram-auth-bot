@@ -5,7 +5,7 @@ O painel `/admin.html` agora permite cadastrar e gerenciar usuários administrad
 ## Como funciona a autenticação
 
 - O backend utiliza a rota [`adminAuth`](web/admin-routes.js) para validar o header `Authorization: Bearer usuario:senha`.
-- As credenciais são armazenadas na tabela `admin_users` do banco PostgreSQL (veja [`schema.sql`](schema.sql)). As senhas são salvas com hash `bcrypt`.
+- As credenciais são armazenadas na tabela `admin_users` do banco PostgreSQL (veja [`schema.sql`](schema.sql)). As senhas são salvas com hash seguro (`bcrypt` quando disponível, com fallback automático para `PBKDF2`).
 - Para compatibilidade, ainda existem credenciais padrão (`admin` e `jacbdias`). Na primeira autenticação elas são migradas automaticamente para o banco. Recomenda-se alterar essas senhas ou criar novos usuários e remover os padrões.
 
 ## Cadastrar novos administradores via painel
