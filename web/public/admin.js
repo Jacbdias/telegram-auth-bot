@@ -9,26 +9,31 @@ if (authToken) {
 
 // ============== LOGIN ==============
 
+// LOGIN
 document.getElementById('loginForm').addEventListener('submit', async (e) => {
     e.preventDefault();
     
+    const username = document.getElementById('username').value;
     const password = document.getElementById('password').value;
     const alert = document.getElementById('loginAlert');
     
-    // Testa a senha fazendo uma requisição
+    // Testa as credenciais fazendo uma requisição
+    const credentials = `${username}:${password}`;
+    
     try {
         const response = await fetch(`${API_URL}/stats`, {
             headers: {
-                'Authorization': `Bearer ${password}`
+                'Authorization': `Bearer ${credentials}`
             }
         });
         
         if (response.ok) {
-            authToken = password;
-            localStorage.setItem('adminToken', password);
+            authToken = credentials;
+            localStorage.setItem('adminToken', credentials);
+            localStorage.setItem('adminUser', username);
             showDashboard();
         } else {
-            alert.textContent = '❌ Senha incorreta!';
+            alert.textContent = '❌ Usuário ou senha incorretos!';
             alert.classList.add('show');
             setTimeout(() => alert.classList.remove('show'), 3000);
         }
@@ -46,6 +51,8 @@ function logout() {
 }
 
 function showDashboard() {
+    const username = localStorage.getItem('adminUser') || 'Admin';
+    document.getElementById('loggedUser').textContent = username;
     document.getElementById('loginContainer').style.display = 'none';
     document.getElementById('dashboard').classList.add('active');
     loadStats();

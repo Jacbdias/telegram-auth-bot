@@ -2,17 +2,30 @@ const express = require('express');
 const router = express.Router();
 const db = require('./database');
 
-// Middleware de autenticação simples
+// Middleware de autenticação com usuário e senha
 const adminAuth = (req, res, next) => {
   const authHeader = req.headers.authorization;
   
-  // Senha simples (MUDE ISSO!)
-  const validPassword = 'admin123'; // SUBSTITUA por uma senha forte
+  // Usuários e senhas autorizados
+  const validUsers = {
+    'admin': 'admin123',
+    'jacbdias': 'suaSenhaForte123',
+    // Adicione mais usuários aqui
+  };
   
-  if (authHeader === `Bearer ${validPassword}`) {
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({ error: 'Não autorizado' });
+  }
+  
+  // Formato esperado: "Bearer usuario:senha"
+  const credentials = authHeader.replace('Bearer ', '');
+  const [username, password] = credentials.split(':');
+  
+  if (validUsers[username] && validUsers[username] === password) {
+    req.user = username; // Armazena usuário na requisição
     next();
   } else {
-    res.status(401).json({ error: 'Não autorizado' });
+    res.status(401).json({ error: 'Credenciais inválidas' });
   }
 };
 
