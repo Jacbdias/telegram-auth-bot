@@ -406,6 +406,7 @@
             <div class="tabs">
                 <button class="tab active" onclick="showTab('subscribers')">Assinantes</button>
                 <button class="tab" onclick="showTab('channels')">Canais</button>
+                <button class="tab" onclick="showTab('admins')">Administradores</button>
                 <button class="tab" onclick="showTab('logs')">Logs</button>
             </div>
 
@@ -432,6 +433,18 @@
                         <button class="btn-success btn-small" onclick="openAddChannelModal()">+ Novo Canal</button>
                     </h2>
                     <div id="channelsTable"></div>
+                </div>
+            </div>
+
+            <!-- Tab: Administradores -->
+            <div id="adminsTab" class="tab-content">
+                <div class="card">
+                    <h2>
+                        Administradores
+                        <button class="btn-success btn-small" onclick="openAddAdminModal()">+ Novo Administrador</button>
+                    </h2>
+                    <div id="adminsAlert" class="alert"></div>
+                    <div id="adminsTable"></div>
                 </div>
             </div>
 
@@ -535,6 +548,29 @@
                 <div style="display: flex; gap: 10px; margin-top: 20px;">
                     <button type="submit" class="btn">Salvar</button>
                     <button type="button" class="btn btn-secondary" onclick="closeChannelModal()">Cancelar</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal: Administradores -->
+    <div id="adminModal" class="modal">
+        <div class="modal-content">
+            <h2 id="adminModalTitle">Novo Administrador</h2>
+            <div id="adminModalAlert" class="alert"></div>
+            <form id="adminForm">
+                <input type="hidden" id="adminId">
+                <div class="form-group">
+                    <label>Usuário</label>
+                    <input type="text" id="adminUsername" placeholder="usuario" required autocomplete="username">
+                </div>
+                <div class="form-group">
+                    <label>Senha</label>
+                    <input type="password" id="adminPassword" placeholder="Senha (mínimo 8 caracteres)" required autocomplete="new-password">
+                </div>
+                <div style="display: flex; gap: 10px; margin-top: 20px;">
+                    <button type="submit" class="btn">Salvar</button>
+                    <button type="button" class="btn btn-secondary" onclick="closeAdminModal()">Cancelar</button>
                 </div>
             </form>
         </div>

@@ -8,6 +8,116 @@ const pool = new Pool({
   }
 });
 
+// ============== ADMIN USERS ==============
+
+// Busca admin por username
+async function getAdminUserByUsername(username) {
+  try {
+    const result = await pool.query(
+      `SELECT id, username, password_hash, created_at, updated_at, last_login
+       FROM admin_users
+       WHERE username = $1`,
+      [username]
+    );
+
+    return result.rows.length > 0 ? result.rows[0] : null;
+  } catch (error) {
+    console.error('Erro ao buscar admin:', error);
+    throw error;
+  }
+}
+
+// Lista todos os admins (sem senha)
+async function listAdminUsers() {
+  try {
+    const result = await pool.query(
+      `SELECT id, username, created_at, updated_at, last_login
+       FROM admin_users
+       ORDER BY username ASC`
+    );
+
+    return result.rows;
+  } catch (error) {
+    console.error('Erro ao listar admins:', error);
+    throw error;
+  }
+}
+
+// Cria novo admin
+async function createAdminUser(username, passwordHash) {
+  try {
+    const result = await pool.query(
+      `INSERT INTO admin_users (username, password_hash)
+       VALUES ($1, $2)
+       RETURNING id, username, created_at, updated_at, last_login`,
+      [username, passwordHash]
+    );
+
+    return result.rows[0];
+  } catch (error) {
+    console.error('Erro ao criar admin:', error);
+    throw error;
+  }
+}
+
+// Atualiza senha do admin
+async function updateAdminUserPassword(id, passwordHash) {
+  try {
+    const result = await pool.query(
+      `UPDATE admin_users
+       SET password_hash = $1, updated_at = NOW()
+       WHERE id = $2
+       RETURNING id, username, created_at, updated_at, last_login`,
+      [passwordHash, id]
+    );
+
+    return result.rows.length > 0 ? result.rows[0] : null;
+  } catch (error) {
+    console.error('Erro ao atualizar senha do admin:', error);
+    throw error;
+  }
+}
+
+// Atualiza última data de login do admin
+async function touchAdminLastLogin(id) {
+  try {
+    await pool.query(
+      `UPDATE admin_users
+       SET last_login = NOW()
+       WHERE id = $1`,
+      [id]
+    );
+  } catch (error) {
+    console.error('Erro ao atualizar último login do admin:', error);
+    throw error;
+  }
+}
+
+// Remove admin
+async function deleteAdminUser(id) {
+  try {
+    await pool.query('DELETE FROM admin_users WHERE id = $1', [id]);
+    return true;
+  } catch (error) {
+    console.error('Erro ao remover admin:', error);
+    throw error;
+  }
+}
+
+// Conta total de admins
+async function countAdminUsers() {
+  try {
+    const result = await pool.query(
+      'SELECT COUNT(*) AS count FROM admin_users'
+    );
+
+    return parseInt(result.rows[0].count, 10);
+  } catch (error) {
+    console.error('Erro ao contar admins:', error);
+    throw error;
+  }
+}
+
 // Busca assinante por email e telefone
 async function getSubscriberByEmailAndPhone(email, phone) {
   try {
@@ -430,6 +540,14 @@ async function getAuthorizationLogs() {
 
 module.exports = {
   pool,
+  // Admins
+  getAdminUserByUsername,
+  listAdminUsers,
+  createAdminUser,
+  updateAdminUserPassword,
+  deleteAdminUser,
+  countAdminUsers,
+  touchAdminLastLogin,
   getSubscriberByEmailAndPhone,
   getSubscriberByEmail,
   getUserByTelegramId,
