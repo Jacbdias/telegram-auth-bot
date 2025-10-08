@@ -59,6 +59,7 @@ function showDashboard() {
     loadSubscribers();
     loadChannels();
     loadLogs();
+    loadAdminUsers();
 }
 
 // ============== REQUISIÇÕES ==============
@@ -71,18 +72,28 @@ async function apiRequest(endpoint, method = 'GET', body = null) {
             'Content-Type': 'application/json'
         }
     };
-    
+
     if (body) {
         options.body = JSON.stringify(body);
     }
-    
+
     const response = await fetch(`${API_URL}${endpoint}`, options);
-    
-    if (!response.ok) {
-        throw new Error('Erro na requisição');
+    const contentType = response.headers.get('content-type') || '';
+    let data = null;
+
+    if (contentType.includes('application/json')) {
+        data = await response.json();
+    } else {
+        const text = await response.text();
+        data = text ? text : null;
     }
-    
-    return response.json();
+
+    if (!response.ok) {
+        const message = data && data.error ? data.error : (typeof data === 'string' && data ? data : 'Erro na requisição');
+        throw new Error(message);
+    }
+
+    return data;
 }
 
 // ============== TABS ==============
@@ -366,7 +377,7 @@ async function deleteChannel(id, name) {
 async function loadLogs() {
     try {
         const logs = await apiRequest('/logs');
-        
+
         let html = `
             <table>
                 <thead>
@@ -380,14 +391,14 @@ async function loadLogs() {
                 </thead>
                 <tbody>
         `;
-        
+
         logs.forEach(log => {
             const date = new Date(log.timestamp);
             const dateStr = date.toLocaleString('pt-BR');
-            
+
             const actionBadge = log.action === 'authorized' ? 'badge-success' : 'badge-danger';
             const actionText = log.action === 'authorized' ? 'Autorizado' : 'Revogado';
-            
+
             html += `
                 <tr>
                     <td>${dateStr}</td>
@@ -398,11 +409,141 @@ async function loadLogs() {
                 </tr>
             `;
         });
-        
+
         html += '</tbody></table>';
         document.getElementById('logsTable').innerHTML = html;
     } catch (error) {
         console.error('Erro ao carregar logs:', error);
+    }
+}
+
+// ============== ADMINISTRADORES ==============
+
+async function loadAdminUsers() {
+    try {
+        const admins = await apiRequest('/admins');
+
+        if (!admins || admins.length === 0) {
+            document.getElementById('adminsTable').innerHTML = '<p>Nenhum administrador cadastrado ainda.</p>';
+            return;
+        }
+
+        let html = `
+            <table>
+                <thead>
+                    <tr>
+                        <th>Usuário</th>
+                        <th>Criado em</th>
+                        <th>Último acesso</th>
+                        <th>Ações</th>
+                    </tr>
+                </thead>
+                <tbody>
+        `;
+
+        admins.forEach(admin => {
+            const created = admin.created_at ? new Date(admin.created_at).toLocaleString('pt-BR') : '-';
+            const lastLogin = admin.last_login ? new Date(admin.last_login).toLocaleString('pt-BR') : '-';
+
+            html += `
+                <tr>
+                    <td>${admin.username}</td>
+                    <td>${created}</td>
+                    <td>${lastLogin}</td>
+                    <td class="actions">
+                        <button class="btn-small btn-edit" onclick="openEditAdminModal(${admin.id}, ${JSON.stringify(admin.username)})">Atualizar senha</button>
+                        <button class="btn-small btn-delete" onclick="deleteAdmin(${admin.id}, ${JSON.stringify(admin.username)})">Remover</button>
+                    </td>
+                </tr>
+            `;
+        });
+
+        html += '</tbody></table>';
+        document.getElementById('adminsTable').innerHTML = html;
+    } catch (error) {
+        console.error('Erro ao carregar administradores:', error);
+        showAlert('adminsAlert', 'Não foi possível carregar os administradores.', 'error');
+    }
+}
+
+function openAddAdminModal() {
+    document.getElementById('adminModalTitle').textContent = 'Novo Administrador';
+    document.getElementById('adminForm').reset();
+    document.getElementById('adminId').value = '';
+    document.getElementById('adminUsername').disabled = false;
+    document.getElementById('adminUsername').value = '';
+    document.getElementById('adminPassword').value = '';
+    document.getElementById('adminModalAlert').classList.remove('show');
+    document.getElementById('adminModal').classList.add('active');
+}
+
+function openEditAdminModal(id, username) {
+    document.getElementById('adminModalTitle').textContent = `Atualizar Senha - ${username}`;
+    document.getElementById('adminForm').reset();
+    document.getElementById('adminId').value = id;
+    document.getElementById('adminUsername').value = username;
+    document.getElementById('adminUsername').disabled = true;
+    document.getElementById('adminPassword').value = '';
+    document.getElementById('adminModalAlert').classList.remove('show');
+    document.getElementById('adminModal').classList.add('active');
+}
+
+function closeAdminModal() {
+    document.getElementById('adminModal').classList.remove('active');
+    document.getElementById('adminForm').reset();
+    document.getElementById('adminUsername').disabled = false;
+}
+
+const adminForm = document.getElementById('adminForm');
+if (adminForm) {
+    adminForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+
+        const id = document.getElementById('adminId').value;
+        const username = document.getElementById('adminUsername').value.trim();
+        const password = document.getElementById('adminPassword').value;
+
+        if (!id && !username) {
+            showAlert('adminModalAlert', 'Informe o nome de usuário.', 'error');
+            return;
+        }
+
+        if (!password || password.length < 8) {
+            showAlert('adminModalAlert', 'A senha deve ter pelo menos 8 caracteres.', 'error');
+            return;
+        }
+
+        try {
+            if (id) {
+                await apiRequest(`/admins/${id}`, 'PUT', { password });
+                showAlert('adminsAlert', 'Senha atualizada com sucesso!', 'success');
+            } else {
+                await apiRequest('/admins', 'POST', { username, password });
+                showAlert('adminsAlert', 'Administrador criado com sucesso!', 'success');
+            }
+
+            closeAdminModal();
+            loadAdminUsers();
+            document.getElementById('adminForm').reset();
+        } catch (error) {
+            const message = error.message || 'Erro ao salvar administrador';
+            showAlert('adminModalAlert', message, 'error');
+        }
+    });
+}
+
+async function deleteAdmin(id, username) {
+    if (!confirm(`Deseja realmente remover o administrador ${username}?`)) {
+        return;
+    }
+
+    try {
+        await apiRequest(`/admins/${id}`, 'DELETE');
+        loadAdminUsers();
+        showAlert('adminsAlert', 'Administrador removido com sucesso.', 'success');
+    } catch (error) {
+        const message = error.message || 'Não foi possível remover o administrador.';
+        showAlert('adminsAlert', message, 'error');
     }
 }
 
@@ -444,20 +585,23 @@ function downloadTemplate() {
     link.click();
 }
 
-document.getElementById('csvFile').addEventListener('change', (e) => {
-    const file = e.target.files[0];
-    
-    if (!file) return;
-    
-    const reader = new FileReader();
-    
-    reader.onload = (event) => {
-        const text = event.target.result;
-        parseCSV(text);
-    };
-    
-    reader.readAsText(file);
-});
+const csvInput = document.getElementById('csvFile');
+if (csvInput) {
+    csvInput.addEventListener('change', (e) => {
+        const file = e.target.files[0];
+
+        if (!file) return;
+
+        const reader = new FileReader();
+
+        reader.onload = (event) => {
+            const text = event.target.result;
+            parseCSV(text);
+        };
+
+        reader.readAsText(file);
+    });
+}
 
 function parseCSV(text) {
     const lines = text.split('\n').filter(line => line.trim());
