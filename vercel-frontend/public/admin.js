@@ -1,5 +1,5 @@
 // Configuração
-const API_URL = 'https://SEU_APP_RAILWAY.up.railway.app/api/admin';
+const API_URL = 'https://telegram-auth-bot-production.up.railway.app/api/admin';
 let authToken = localStorage.getItem('adminToken') || '';
 
 // Verifica se já está logado
