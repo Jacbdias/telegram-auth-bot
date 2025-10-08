@@ -1,0 +1,453 @@
+const { Pool } = require('pg');
+
+// Configuração do pool de conexões PostgreSQL
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: {
+    rejectUnauthorized: false
+  }
+});
+
+// Busca assinante por email e telefone
+async function getSubscriberByEmailAndPhone(email, phone) {
+  try {
+    const result = await pool.query(
+      `SELECT id, name, email, phone, plan, status 
+       FROM subscribers 
+       WHERE email = $1 AND phone = $2 AND status = 'active'`,
+      [email, phone]
+    );
+
+    return result.rows.length > 0 ? result.rows[0] : null;
+  } catch (error) {
+    console.error('Erro ao buscar assinante:', error);
+    throw error;
+  }
+}
+
+// Busca usuário autorizado por Telegram ID
+async function getUserByTelegramId(telegramId) {
+  try {
+    const result = await pool.query(
+      `SELECT u.*, s.name, s.email, s.plan, s.status
+       FROM authorized_users u
+       LEFT JOIN subscribers s ON u.subscriber_id = s.id
+       WHERE u.telegram_id = $1`,
+      [telegramId]
+    );
+
+    return result.rows.length > 0 ? result.rows[0] : null;
+  } catch (error) {
+    console.error('Erro ao buscar usuário:', error);
+    throw error;
+  }
+}
+
+// Autoriza usuário no sistema
+async function authorizeUser(telegramId, subscriber) {
+  const client = await pool.connect();
+  
+  try {
+    await client.query('BEGIN');
+
+    // Verifica se já existe autorização
+    const existing = await client.query(
+      'SELECT id FROM authorized_users WHERE telegram_id = $1',
+      [telegramId]
+    );
+
+    if (existing.rows.length > 0) {
+      // Atualiza autorização existente
+      await client.query(
+        `UPDATE authorized_users 
+         SET subscriber_id = $1, authorized = true, authorized_at = NOW()
+         WHERE telegram_id = $2`,
+        [subscriber.id, telegramId]
+      );
+    } else {
+      // Cria nova autorização
+      await client.query(
+        `INSERT INTO authorized_users 
+         (telegram_id, subscriber_id, authorized, authorized_at)
+         VALUES ($1, $2, true, NOW())`,
+        [telegramId, subscriber.id]
+      );
+    }
+
+    // Registra log
+    await client.query(
+      `INSERT INTO authorization_logs 
+       (telegram_id, subscriber_id, action, timestamp)
+       VALUES ($1, $2, 'authorized', NOW())`,
+      [telegramId, subscriber.id]
+    );
+
+    await client.query('COMMIT');
+    return true;
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('Erro ao autorizar usuário:', error);
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+// Busca canais por plano
+async function getUserChannels(plan) {
+  try {
+    const result = await pool.query(
+      `SELECT id, name, chat_id, description, plan
+       FROM channels
+       WHERE plan = $1 OR plan = 'all'
+       ORDER BY order_index ASC`,
+      [plan]
+    );
+
+    return result.rows;
+  } catch (error) {
+    console.error('Erro ao buscar canais:', error);
+    throw error;
+  }
+}
+
+
+// Remove autorização de usuário
+async function revokeAuthorization(telegramId) {
+  try {
+    await pool.query(
+      'UPDATE authorized_users SET authorized = false WHERE telegram_id = $1',
+      [telegramId]
+    );
+
+    await pool.query(
+      `INSERT INTO authorization_logs 
+       (telegram_id, action, timestamp)
+       VALUES ($1, 'revoked', NOW())`,
+      [telegramId]
+    );
+
+    return true;
+  } catch (error) {
+    console.error('Erro ao revogar autorização:', error);
+    throw error;
+  }
+}
+
+// Busca estatísticas
+async function getStats() {
+  try {
+    const totalUsers = await pool.query(
+      'SELECT COUNT(*) as count FROM authorized_users WHERE authorized = true'
+    );
+    
+    const totalSubscribers = await pool.query(
+      'SELECT COUNT(*) as count FROM subscribers WHERE status = \'active\''
+    );
+    
+    const byPlan = await pool.query(
+      `SELECT s.plan, COUNT(*) as count 
+       FROM authorized_users u
+       JOIN subscribers s ON u.subscriber_id = s.id
+       WHERE u.authorized = true
+       GROUP BY s.plan`
+    );
+
+    return {
+      totalAuthorizedUsers: parseInt(totalUsers.rows[0].count),
+      totalActiveSubscribers: parseInt(totalSubscribers.rows[0].count),
+      byPlan: byPlan.rows
+    };
+  } catch (error) {
+    console.error('Erro ao buscar estatísticas:', error);
+    throw error;
+  }
+}
+
+// Busca assinante apenas por email
+async function getSubscriberByEmail(email) {
+  try {
+    const result = await pool.query(
+      `SELECT id, name, email, phone, plan, status 
+       FROM subscribers 
+       WHERE email = $1`,
+      [email]
+    );
+
+    return result.rows.length > 0 ? result.rows[0] : null;
+  } catch (error) {
+    console.error('Erro ao buscar assinante por email:', error);
+    throw error;
+  }
+}
+
+// Busca usuário autorizado por subscriber_id
+async function getUserBySubscriberId(subscriberId) {
+  try {
+    const result = await pool.query(
+      `SELECT * FROM authorized_users WHERE subscriber_id = $1`,
+      [subscriberId]
+    );
+
+    return result.rows.length > 0 ? result.rows[0] : null;
+  } catch (error) {
+    console.error('Erro ao buscar usuário por subscriber_id:', error);
+    throw error;
+  }
+}
+
+// Remove acesso do usuário completamente
+async function revokeUserAccess(subscriberId) {
+  const client = await pool.connect();
+  
+  try {
+    await client.query('BEGIN');
+
+    // Remove autorização
+    await client.query(
+      'DELETE FROM authorized_users WHERE subscriber_id = $1',
+      [subscriberId]
+    );
+
+    // Atualiza status do assinante
+    await client.query(
+      `UPDATE subscribers SET status = 'inactive' WHERE id = $1`,
+      [subscriberId]
+    );
+
+    // Registra log
+    await client.query(
+      `INSERT INTO authorization_logs (subscriber_id, action, timestamp)
+       VALUES ($1, 'revoked', NOW())`,
+      [subscriberId]
+    );
+
+    await client.query('COMMIT');
+    return true;
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('Erro ao revogar acesso:', error);
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+// Busca todos os usuários que já foram autorizados alguma vez
+async function getAllAuthorizedUsers() {
+  try {
+    const result = await pool.query(
+      `SELECT DISTINCT au.telegram_id, s.name, s.email, au.authorized
+       FROM authorized_users au
+       LEFT JOIN subscribers s ON au.subscriber_id = s.id`
+    );
+
+    return result.rows;
+  } catch (error) {
+    console.error('Erro ao buscar usuários autorizados:', error);
+    throw error;
+  }
+}
+
+// ============== FUNÇÕES ADMIN ==============
+
+// Listar todos os assinantes
+async function getAllSubscribers() {
+  try {
+    const result = await pool.query(
+      `SELECT s.*, 
+              au.telegram_id, 
+              au.authorized, 
+              au.authorized_at
+       FROM subscribers s
+       LEFT JOIN authorized_users au ON s.id = au.subscriber_id
+       ORDER BY s.created_at DESC`
+    );
+    return result.rows;
+  } catch (error) {
+    console.error('Erro ao buscar assinantes:', error);
+    throw error;
+  }
+}
+
+// Buscar assinante por ID
+async function getSubscriberById(id) {
+  try {
+    const result = await pool.query(
+      'SELECT * FROM subscribers WHERE id = $1',
+      [id]
+    );
+    return result.rows[0];
+  } catch (error) {
+    console.error('Erro ao buscar assinante:', error);
+    throw error;
+  }
+}
+
+// Criar novo assinante
+async function createSubscriber(name, email, phone, plan) {
+  try {
+    const result = await pool.query(
+      `INSERT INTO subscribers (name, email, phone, plan, status)
+       VALUES ($1, $2, $3, $4, 'active')
+       RETURNING *`,
+      [name, email, phone, plan]
+    );
+    return result.rows[0];
+  } catch (error) {
+    console.error('Erro ao criar assinante:', error);
+    throw error;
+  }
+}
+
+// Atualizar assinante
+async function updateSubscriber(id, name, email, phone, plan, status) {
+  const client = await pool.connect();
+  
+  try {
+    await client.query('BEGIN');
+    
+    // Pega status anterior
+    const oldData = await client.query(
+      'SELECT status FROM subscribers WHERE id = $1',
+      [id]
+    );
+    
+    // Atualiza subscriber
+    await client.query(
+      `UPDATE subscribers 
+       SET name = $1, email = $2, phone = $3, plan = $4, status = $5, updated_at = NOW()
+       WHERE id = $6`,
+      [name, email, phone, plan, status, id]
+    );
+    
+    // Se mudou para inactive, revoga autorização
+    if (oldData.rows.length > 0 && oldData.rows[0].status === 'active' && status === 'inactive') {
+      await client.query(
+        'UPDATE authorized_users SET authorized = false WHERE subscriber_id = $1',
+        [id]
+      );
+      
+      // Registra log
+      await client.query(
+        `INSERT INTO authorization_logs (subscriber_id, action, timestamp)
+         VALUES ($1, 'revoked', NOW())`,
+        [id]
+      );
+    }
+    
+    // Se mudou para active, permite autorização novamente
+    if (oldData.rows.length > 0 && oldData.rows[0].status === 'inactive' && status === 'active') {
+      await client.query(
+        'UPDATE authorized_users SET authorized = true WHERE subscriber_id = $1',
+        [id]
+      );
+    }
+    
+    await client.query('COMMIT');
+    return true;
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('Erro ao atualizar assinante:', error);
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+// Listar todos os canais
+async function getAllChannels() {
+  try {
+    const result = await pool.query(
+      'SELECT * FROM channels ORDER BY plan, order_index'
+    );
+    return result.rows;
+  } catch (error) {
+    console.error('Erro ao buscar canais:', error);
+    throw error;
+  }
+}
+
+// Criar novo canal
+async function createChannel(name, chat_id, description, plan, order_index) {
+  try {
+    const result = await pool.query(
+      `INSERT INTO channels (name, chat_id, description, plan, order_index, active)
+       VALUES ($1, $2, $3, $4, $5, true)
+       RETURNING *`,
+      [name, chat_id, description, plan, order_index || 0]
+    );
+    return result.rows[0];
+  } catch (error) {
+    console.error('Erro ao criar canal:', error);
+    throw error;
+  }
+}
+
+// Atualizar canal
+async function updateChannel(id, name, chat_id, description, plan, order_index, active) {
+  try {
+    await pool.query(
+      `UPDATE channels 
+       SET name = $1, chat_id = $2, description = $3, plan = $4, order_index = $5, active = $6, updated_at = NOW()
+       WHERE id = $7`,
+      [name, chat_id, description, plan, order_index, active, id]
+    );
+    return true;
+  } catch (error) {
+    console.error('Erro ao atualizar canal:', error);
+    throw error;
+  }
+}
+
+// Deletar canal
+async function deleteChannel(id) {
+  try {
+    await pool.query('DELETE FROM channels WHERE id = $1', [id]);
+    return true;
+  } catch (error) {
+    console.error('Erro ao deletar canal:', error);
+    throw error;
+  }
+}
+
+// Buscar logs de autorização
+async function getAuthorizationLogs() {
+  try {
+    const result = await pool.query(
+      `SELECT l.*, s.name, s.email 
+       FROM authorization_logs l
+       LEFT JOIN subscribers s ON l.subscriber_id = s.id
+       ORDER BY l.timestamp DESC
+       LIMIT 100`
+    );
+    return result.rows;
+  } catch (error) {
+    console.error('Erro ao buscar logs:', error);
+    throw error;
+  }
+}
+
+module.exports = {
+  pool,
+  getSubscriberByEmailAndPhone,
+  getSubscriberByEmail,
+  getUserByTelegramId,
+  getUserBySubscriberId,
+  authorizeUser,
+  getUserChannels,
+  revokeAuthorization,
+  revokeUserAccess,
+  getAllAuthorizedUsers,
+  getStats,
+  // Novas funções admin
+  getAllSubscribers,
+  getSubscriberById,
+  createSubscriber,
+  updateSubscriber,
+  getAllChannels,
+  createChannel,
+  updateChannel,
+  deleteChannel,
+  getAuthorizationLogs
+};

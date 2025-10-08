@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Verificação de Identidade</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            max-width: 450px;
+            width: 100%;
+            padding: 40px;
+            animation: slideUp 0.5s ease;
+        }
+
+        @keyframes slideUp {
+            from {
+                opacity: 0;
+                transform: translateY(30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .logo {
+            font-size: 48px;
+            margin-bottom: 10px;
+        }
+
+        h1 {
+            color: #333;
+            font-size: 24px;
+            margin-bottom: 10px;
+        }
+
+        .subtitle {
+            color: #666;
+            font-size: 14px;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        label {
+            display: block;
+            color: #333;
+            font-weight: 600;
+            margin-bottom: 8px;
+            font-size: 14px;
+        }
+
+        input {
+            width: 100%;
+            padding: 12px 15px;
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            font-size: 16px;
+            transition: all 0.3s;
+            font-family: inherit;
+        }
+
+        input:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+
+        .btn {
+            width: 100%;
+            padding: 14px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 10px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            margin-top: 10px;
+        }
+
+        .btn:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
+        }
+
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .alert {
+            padding: 12px 15px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            display: none;
+            animation: slideDown 0.3s ease;
+        }
+
+        @keyframes slideDown {
+            from {
+                opacity: 0;
+                transform: translateY(-10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .alert.show {
+            display: block;
+        }
+
+        .alert-success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .alert-error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+        .alert-warning {
+            background: #fff3cd;
+            color: #856404;
+            border: 1px solid #ffeaa7;
+        }
+
+        .info-box {
+            background: #f8f9fa;
+            border-left: 4px solid #667eea;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 20px;
+            font-size: 13px;
+            color: #555;
+        }
+
+        .loader {
+            display: none;
+            text-align: center;
+            margin: 20px 0;
+        }
+
+        .loader.show {
+            display: block;
+        }
+
+        .spinner {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #667eea;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="logo">🔐</div>
+            <h1>Verificação de Identidade</h1>
+            <p class="subtitle">Confirme seus dados para acessar os canais</p>
+        </div>
+
+        <div id="alert" class="alert"></div>
+
+        <form id="verificationForm">
+            <div class="form-group">
+                <label for="email">📧 Email cadastrado</label>
+                <input 
+                    type="email" 
+                    id="email" 
+                    name="email" 
+                    placeholder="seu@email.com" 
+                    required
+                    autocomplete="email"
+                >
+            </div>
+
+            <div class="form-group">
+                <label for="phone">📱 Telefone cadastrado</label>
+                <input 
+                    type="tel" 
+                    id="phone" 
+                    name="phone" 
+                    placeholder="(11) 99999-9999" 
+                    required
+                    autocomplete="tel"
+                >
+            </div>
+
+            <button type="submit" class="btn" id="submitBtn">
+                Verificar Dados
+            </button>
+        </form>
+
+        <div class="loader" id="loader">
+            <div class="spinner"></div>
+            <p style="margin-top: 10px; color: #666;">Verificando...</p>
+        </div>
+
+        <div class="info-box">
+            <strong>ℹ️ Informações importantes:</strong><br>
+            • Use o mesmo email e telefone do seu cadastro<br>
+            • Este link expira em 15 minutos<br>
+            • Em caso de dúvidas, contate o suporte
+        </div>
+    </div>
+
+    <script>
+        const form = document.getElementById('verificationForm');
+        const alert = document.getElementById('alert');
+        const loader = document.getElementById('loader');
+        const submitBtn = document.getElementById('submitBtn');
+        const phoneInput = document.getElementById('phone');
+
+        // Máscara de telefone
+        phoneInput.addEventListener('input', function(e) {
+            let value = e.target.value.replace(/\D/g, '');
+            
+            if (value.length <= 11) {
+                if (value.length > 10) {
+                    value = value.replace(/(\d{2})(\d{5})(\d{4})/, '($1) $2-$3');
+                } else if (value.length > 6) {
+                    value = value.replace(/(\d{2})(\d{4})(\d{0,4})/, '($1) $2-$3');
+                } else if (value.length > 2) {
+                    value = value.replace(/(\d{2})(\d{0,5})/, '($1) $2');
+                } else {
+                    value = value.replace(/(\d*)/, '($1');
+                }
+            }
+            
+            e.target.value = value;
+        });
+
+        // Pega token da URL
+        const urlParams = new URLSearchParams(window.location.search);
+        const token = urlParams.get('token');
+
+        if (!token) {
+            showAlert('Link inválido. Solicite um novo link no bot.', 'error');
+            submitBtn.disabled = true;
+        }
+
+        // Submissão do formulário
+        form.addEventListener('submit', async function(e) {
+            e.preventDefault();
+
+            const email = document.getElementById('email').value.trim();
+            const phone = document.getElementById('phone').value;
+
+            if (!email || !phone) {
+                showAlert('Preencha todos os campos', 'warning');
+                return;
+            }
+
+            // Mostra loader
+            loader.classList.add('show');
+            submitBtn.disabled = true;
+            alert.classList.remove('show');
+
+            try {
+                const response = await fetch('/api/verify', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ token, email, phone })
+                });
+
+                const data = await response.json();
+
+                loader.classList.remove('show');
+
+                if (data.success) {
+                    showAlert(
+                        '✅ ' + data.message + ' Você receberá os links dos canais no Telegram.', 
+                        'success'
+                    );
+                    form.reset();
+                    
+                    // Aguarda 3 segundos e mostra mensagem final
+                    setTimeout(() => {
+                        alert.innerHTML = '✅ Verificação concluída! Você pode fechar esta página e voltar ao Telegram.';
+                    }, 3000);
+                } else {
+                    showAlert('❌ ' + data.message, 'error');
+                    submitBtn.disabled = false;
+                }
+            } catch (error) {
+                loader.classList.remove('show');
+                showAlert('❌ Erro de conexão. Tente novamente.', 'error');
+                submitBtn.disabled = false;
+            }
+        });
+
+        function showAlert(message, type) {
+            alert.textContent = message;
+            alert.className = 'alert alert-' + type + ' show';
+        }
+
+        // Verifica validade do token a cada 30 segundos
+        if (token) {
+            setInterval(async () => {
+                try {
+                    const response = await fetch('/api/check-token?token=' + token);
+                    const data = await response.json();
+                    
+                    if (!data.valid) {
+                        showAlert('⚠️ Link expirado. Solicite um novo no bot.', 'warning');
+                        submitBtn.disabled = true;
+                    }
+                } catch (error) {
+                    console.error('Erro ao verificar token:', error);
+                }
+            }, 30000);
+        }
+    </script>
+</body>
+</html>

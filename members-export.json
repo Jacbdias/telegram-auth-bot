@@ -1,0 +1,484 @@
+{
+  "export_date": "2025-10-08T00:01:17.344Z",
+  "total_unique_members": 6,
+  "by_group": {
+    "Bate-Papo 1": [
+      {
+        "telegram_id": "8228588495",
+        "username": "membroscfbot",
+        "first_name": "membroscf",
+        "last_name": "",
+        "full_name": "membroscf",
+        "is_bot": true,
+        "status": "administrator",
+        "group": "Bate-Papo 1",
+        "plan": "CF VIP - FATOS DA BOLSA 1"
+      },
+      {
+        "telegram_id": "6221220051",
+        "username": "suportefatosdabolsa",
+        "first_name": "Fatos da Bolsa",
+        "last_name": "Suporte",
+        "full_name": "Fatos da Bolsa Suporte",
+        "is_bot": false,
+        "status": "administrator",
+        "group": "Bate-Papo 1",
+        "plan": "CF VIP - FATOS DA BOLSA 1"
+      },
+      {
+        "telegram_id": "1419540188",
+        "username": null,
+        "first_name": "Gabrine",
+        "last_name": "Acoes americanas",
+        "full_name": "Gabrine Acoes americanas",
+        "is_bot": false,
+        "status": "administrator",
+        "group": "Bate-Papo 1",
+        "plan": "CF VIP - FATOS DA BOLSA 1"
+      },
+      {
+        "telegram_id": "909309945",
+        "username": "davicnpi",
+        "first_name": "Davi Souza",
+        "last_name": "",
+        "full_name": "Davi Souza",
+        "is_bot": false,
+        "status": "administrator",
+        "group": "Bate-Papo 1",
+        "plan": "CF VIP - FATOS DA BOLSA 1"
+      },
+      {
+        "telegram_id": "1839742847",
+        "username": "Jacqueline_dias",
+        "first_name": "Jacqueline",
+        "last_name": "Dias",
+        "full_name": "Jacqueline Dias",
+        "is_bot": false,
+        "status": "creator",
+        "group": "Bate-Papo 1",
+        "plan": "CF VIP - FATOS DA BOLSA 1"
+      }
+    ],
+    "Bate-Papo 2": [
+      {
+        "telegram_id": "8228588495",
+        "username": "membroscfbot",
+        "first_name": "membroscf",
+        "last_name": "",
+        "full_name": "membroscf",
+        "is_bot": true,
+        "status": "administrator",
+        "group": "Bate-Papo 2",
+        "plan": "CF VIP - FATOS DA BOLSA 2"
+      },
+      {
+        "telegram_id": "6221220051",
+        "username": "suportefatosdabolsa",
+        "first_name": "Fatos da Bolsa",
+        "last_name": "Suporte",
+        "full_name": "Fatos da Bolsa Suporte",
+        "is_bot": false,
+        "status": "administrator",
+        "group": "Bate-Papo 2",
+        "plan": "CF VIP - FATOS DA BOLSA 2"
+      },
+      {
+        "telegram_id": "1419540188",
+        "username": null,
+        "first_name": "Gabrine",
+        "last_name": "Acoes americanas",
+        "full_name": "Gabrine Acoes americanas",
+        "is_bot": false,
+        "status": "administrator",
+        "group": "Bate-Papo 2",
+        "plan": "CF VIP - FATOS DA BOLSA 2"
+      },
+      {
+        "telegram_id": "909309945",
+        "username": "davicnpi",
+        "first_name": "Davi Souza",
+        "last_name": "",
+        "full_name": "Davi Souza",
+        "is_bot": false,
+        "status": "administrator",
+        "group": "Bate-Papo 2",
+        "plan": "CF VIP - FATOS DA BOLSA 2"
+      },
+      {
+        "telegram_id": "1839742847",
+        "username": "Jacqueline_dias",
+        "first_name": "Jacqueline",
+        "last_name": "Dias",
+        "full_name": "Jacqueline Dias",
+        "is_bot": false,
+        "status": "creator",
+        "group": "Bate-Papo 2",
+        "plan": "CF VIP - FATOS DA BOLSA 2"
+      }
+    ],
+    "Bate-Papo 3": [
+      {
+        "telegram_id": "8228588495",
+        "username": "membroscfbot",
+        "first_name": "membroscf",
+        "last_name": "",
+        "full_name": "membroscf",
+        "is_bot": true,
+        "status": "administrator",
+        "group": "Bate-Papo 3",
+        "plan": "CF VIP - FATOS DA BOLSA 3"
+      },
+      {
+        "telegram_id": "6221220051",
+        "username": "suportefatosdabolsa",
+        "first_name": "Fatos da Bolsa",
+        "last_name": "Suporte",
+        "full_name": "Fatos da Bolsa Suporte",
+        "is_bot": false,
+        "status": "administrator",
+        "group": "Bate-Papo 3",
+        "plan": "CF VIP - FATOS DA BOLSA 3"
+      },
+      {
+        "telegram_id": "1419540188",
+        "username": null,
+        "first_name": "Gabrine",
+        "last_name": "Acoes americanas",
+        "full_name": "Gabrine Acoes americanas",
+        "is_bot": false,
+        "status": "administrator",
+        "group": "Bate-Papo 3",
+        "plan": "CF VIP - FATOS DA BOLSA 3"
+      },
+      {
+        "telegram_id": "909309945",
+        "username": "davicnpi",
+        "first_name": "Davi Souza",
+        "last_name": "",
+        "full_name": "Davi Souza",
+        "is_bot": false,
+        "status": "administrator",
+        "group": "Bate-Papo 3",
+        "plan": "CF VIP - FATOS DA BOLSA 3"
+      },
+      {
+        "telegram_id": "1839742847",
+        "username": "Jacqueline_dias",
+        "first_name": "Jacqueline",
+        "last_name": "Dias",
+        "full_name": "Jacqueline Dias",
+        "is_bot": false,
+        "status": "creator",
+        "group": "Bate-Papo 3",
+        "plan": "CF VIP - FATOS DA BOLSA 3"
+      }
+    ],
+    "Milhas": [
+      {
+        "telegram_id": "8228588495",
+        "username": "membroscfbot",
+        "first_name": "membroscf",
+        "last_name": "",
+        "full_name": "membroscf",
+        "is_bot": true,
+        "status": "administrator",
+        "group": "Milhas",
+        "plan": "Todos VIP"
+      },
+      {
+        "telegram_id": "6221220051",
+        "username": "suportefatosdabolsa",
+        "first_name": "Fatos da Bolsa",
+        "last_name": "Suporte",
+        "full_name": "Fatos da Bolsa Suporte",
+        "is_bot": false,
+        "status": "administrator",
+        "group": "Milhas",
+        "plan": "Todos VIP"
+      },
+      {
+        "telegram_id": "909309945",
+        "username": "davicnpi",
+        "first_name": "Davi Souza",
+        "last_name": "",
+        "full_name": "Davi Souza",
+        "is_bot": false,
+        "status": "administrator",
+        "group": "Milhas",
+        "plan": "Todos VIP"
+      },
+      {
+        "telegram_id": "1839742847",
+        "username": "Jacqueline_dias",
+        "first_name": "Jacqueline",
+        "last_name": "Dias",
+        "full_name": "Jacqueline Dias",
+        "is_bot": false,
+        "status": "creator",
+        "group": "Milhas",
+        "plan": "Todos VIP"
+      }
+    ],
+    "Atualizações CF VIP": [
+      {
+        "telegram_id": "8228588495",
+        "username": "membroscfbot",
+        "first_name": "membroscf",
+        "last_name": "",
+        "full_name": "membroscf",
+        "is_bot": true,
+        "status": "administrator",
+        "group": "Atualizações CF VIP",
+        "plan": "Todos VIP"
+      },
+      {
+        "telegram_id": "575539491",
+        "username": "Marcos_Schilling",
+        "first_name": "Marcos",
+        "last_name": "Schilling",
+        "full_name": "Marcos Schilling",
+        "is_bot": false,
+        "status": "administrator",
+        "group": "Atualizações CF VIP",
+        "plan": "Todos VIP"
+      },
+      {
+        "telegram_id": "6221220051",
+        "username": "suportefatosdabolsa",
+        "first_name": "Fatos da Bolsa",
+        "last_name": "Suporte",
+        "full_name": "Fatos da Bolsa Suporte",
+        "is_bot": false,
+        "status": "administrator",
+        "group": "Atualizações CF VIP",
+        "plan": "Todos VIP"
+      },
+      {
+        "telegram_id": "909309945",
+        "username": "davicnpi",
+        "first_name": "Davi Souza",
+        "last_name": "",
+        "full_name": "Davi Souza",
+        "is_bot": false,
+        "status": "administrator",
+        "group": "Atualizações CF VIP",
+        "plan": "Todos VIP"
+      },
+      {
+        "telegram_id": "1839742847",
+        "username": "Jacqueline_dias",
+        "first_name": "Jacqueline",
+        "last_name": "Dias",
+        "full_name": "Jacqueline Dias",
+        "is_bot": false,
+        "status": "creator",
+        "group": "Atualizações CF VIP",
+        "plan": "Todos VIP"
+      }
+    ],
+    "Atualizações CF LITE": [
+      {
+        "telegram_id": "8228588495",
+        "username": "membroscfbot",
+        "first_name": "membroscf",
+        "last_name": "",
+        "full_name": "membroscf",
+        "is_bot": true,
+        "status": "administrator",
+        "group": "Atualizações CF LITE",
+        "plan": "Close Friends LITE"
+      },
+      {
+        "telegram_id": "6221220051",
+        "username": "suportefatosdabolsa",
+        "first_name": "Fatos da Bolsa",
+        "last_name": "Suporte",
+        "full_name": "Fatos da Bolsa Suporte",
+        "is_bot": false,
+        "status": "administrator",
+        "group": "Atualizações CF LITE",
+        "plan": "Close Friends LITE"
+      },
+      {
+        "telegram_id": "909309945",
+        "username": "davicnpi",
+        "first_name": "Davi Souza",
+        "last_name": "",
+        "full_name": "Davi Souza",
+        "is_bot": false,
+        "status": "administrator",
+        "group": "Atualizações CF LITE",
+        "plan": "Close Friends LITE"
+      },
+      {
+        "telegram_id": "1839742847",
+        "username": "Jacqueline_dias",
+        "first_name": "Jacqueline",
+        "last_name": "Dias",
+        "full_name": "Jacqueline Dias",
+        "is_bot": false,
+        "status": "creator",
+        "group": "Atualizações CF LITE",
+        "plan": "Close Friends LITE"
+      }
+    ],
+    "Projeto Renda Passiva": [
+      {
+        "telegram_id": "8228588495",
+        "username": "membroscfbot",
+        "first_name": "membroscf",
+        "last_name": "",
+        "full_name": "membroscf",
+        "is_bot": true,
+        "status": "administrator",
+        "group": "Projeto Renda Passiva",
+        "plan": "Projeto Renda Passiva"
+      },
+      {
+        "telegram_id": "6221220051",
+        "username": "suportefatosdabolsa",
+        "first_name": "Fatos da Bolsa",
+        "last_name": "Suporte",
+        "full_name": "Fatos da Bolsa Suporte",
+        "is_bot": false,
+        "status": "administrator",
+        "group": "Projeto Renda Passiva",
+        "plan": "Projeto Renda Passiva"
+      },
+      {
+        "telegram_id": "909309945",
+        "username": "davicnpi",
+        "first_name": "Davi Souza",
+        "last_name": "",
+        "full_name": "Davi Souza",
+        "is_bot": false,
+        "status": "administrator",
+        "group": "Projeto Renda Passiva",
+        "plan": "Projeto Renda Passiva"
+      },
+      {
+        "telegram_id": "1839742847",
+        "username": "Jacqueline_dias",
+        "first_name": "Jacqueline",
+        "last_name": "Dias",
+        "full_name": "Jacqueline Dias",
+        "is_bot": false,
+        "status": "creator",
+        "group": "Projeto Renda Passiva",
+        "plan": "Projeto Renda Passiva"
+      }
+    ]
+  },
+  "unique_members": [
+    {
+      "telegram_id": "8228588495",
+      "username": "membroscfbot",
+      "first_name": "membroscf",
+      "last_name": "",
+      "full_name": "membroscf",
+      "is_bot": true,
+      "status": "administrator",
+      "group": "Bate-Papo 1",
+      "plan": "CF VIP - FATOS DA BOLSA 1",
+      "groups": [
+        "Bate-Papo 1",
+        "Bate-Papo 2",
+        "Bate-Papo 3",
+        "Milhas",
+        "Atualizações CF VIP",
+        "Atualizações CF LITE",
+        "Projeto Renda Passiva"
+      ]
+    },
+    {
+      "telegram_id": "6221220051",
+      "username": "suportefatosdabolsa",
+      "first_name": "Fatos da Bolsa",
+      "last_name": "Suporte",
+      "full_name": "Fatos da Bolsa Suporte",
+      "is_bot": false,
+      "status": "administrator",
+      "group": "Bate-Papo 1",
+      "plan": "CF VIP - FATOS DA BOLSA 1",
+      "groups": [
+        "Bate-Papo 1",
+        "Bate-Papo 2",
+        "Bate-Papo 3",
+        "Milhas",
+        "Atualizações CF VIP",
+        "Atualizações CF LITE",
+        "Projeto Renda Passiva"
+      ]
+    },
+    {
+      "telegram_id": "1419540188",
+      "username": null,
+      "first_name": "Gabrine",
+      "last_name": "Acoes americanas",
+      "full_name": "Gabrine Acoes americanas",
+      "is_bot": false,
+      "status": "administrator",
+      "group": "Bate-Papo 1",
+      "plan": "CF VIP - FATOS DA BOLSA 1",
+      "groups": [
+        "Bate-Papo 1",
+        "Bate-Papo 2",
+        "Bate-Papo 3"
+      ]
+    },
+    {
+      "telegram_id": "909309945",
+      "username": "davicnpi",
+      "first_name": "Davi Souza",
+      "last_name": "",
+      "full_name": "Davi Souza",
+      "is_bot": false,
+      "status": "administrator",
+      "group": "Bate-Papo 1",
+      "plan": "CF VIP - FATOS DA BOLSA 1",
+      "groups": [
+        "Bate-Papo 1",
+        "Bate-Papo 2",
+        "Bate-Papo 3",
+        "Milhas",
+        "Atualizações CF VIP",
+        "Atualizações CF LITE",
+        "Projeto Renda Passiva"
+      ]
+    },
+    {
+      "telegram_id": "1839742847",
+      "username": "Jacqueline_dias",
+      "first_name": "Jacqueline",
+      "last_name": "Dias",
+      "full_name": "Jacqueline Dias",
+      "is_bot": false,
+      "status": "creator",
+      "group": "Bate-Papo 1",
+      "plan": "CF VIP - FATOS DA BOLSA 1",
+      "groups": [
+        "Bate-Papo 1",
+        "Bate-Papo 2",
+        "Bate-Papo 3",
+        "Milhas",
+        "Atualizações CF VIP",
+        "Atualizações CF LITE",
+        "Projeto Renda Passiva"
+      ]
+    },
+    {
+      "telegram_id": "575539491",
+      "username": "Marcos_Schilling",
+      "first_name": "Marcos",
+      "last_name": "Schilling",
+      "full_name": "Marcos Schilling",
+      "is_bot": false,
+      "status": "administrator",
+      "group": "Atualizações CF VIP",
+      "plan": "Todos VIP",
+      "groups": [
+        "Atualizações CF VIP"
+      ]
+    }
+  ]
+}
