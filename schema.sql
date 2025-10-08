@@ -1,3 +1,15 @@
+-- Tabela de administradores do painel
+CREATE TABLE IF NOT EXISTS admin_users (
+    id SERIAL PRIMARY KEY,
+    username VARCHAR(100) NOT NULL UNIQUE,
+    password_hash VARCHAR(255) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    last_login TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_admin_users_username ON admin_users(username);
+
 -- Tabela de assinantes (seus clientes)
 CREATE TABLE IF NOT EXISTS subscribers (
     id SERIAL PRIMARY KEY,
