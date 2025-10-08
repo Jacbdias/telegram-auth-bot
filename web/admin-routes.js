@@ -23,6 +23,7 @@ function createAdminRouter({ db = defaultDb, passwords = passwordUtils } = {}) {
     return db.createAdminUser(username, passwordHash);
   }
 
+codex/add-admin-user-registration-s4zf1j
   // Middleware de autenticação com usuário e senha
   const adminAuth = async (req, res, next) => {
     const authHeader = req.headers.authorization;
