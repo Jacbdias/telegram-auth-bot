@@ -7,6 +7,13 @@ const { validateToken, consumeToken, notifyUserAuthorized } = require('../bot/in
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// CORS - Permite requisições da Vercel
+const cors = require('cors');
+app.use(cors({
+  origin: '*',
+  credentials: true
+}));
+
 // Middleware
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
