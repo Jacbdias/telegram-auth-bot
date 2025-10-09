@@ -73,6 +73,12 @@ function createMockDb() {
     async getSubscriberById() {
       return null;
     },
+    async getUserBySubscriberId() {
+      return null;
+    },
+    async getUserChannels() {
+      return [];
+    },
     async createSubscriber() {
       return {};
     },
