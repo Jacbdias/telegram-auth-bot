@@ -2,6 +2,38 @@ const express = require('express');
 const defaultDb = require('./database');
 const passwordUtils = require('./passwords');
 
+// Função auxiliar para remover usuário dos grupos do Telegram
+async function removeUserFromTelegramGroups(telegramId, plan) {
+  try {
+    const TelegramBot = require('node-telegram-bot-api');
+    const token = process.env.TELEGRAM_BOT_TOKEN;
+    const bot = new TelegramBot(token);
+    
+    const allChannels = await defaultDb.getAllChannels();
+    
+    // Filtra canais do plano do usuário
+    const userChannels = allChannels.filter(
+      ch => ch.plan === plan || ch.plan === 'all'
+    );
+    
+    for (const channel of userChannels) {
+      try {
+        await bot.banChatMember(channel.chat_id, telegramId);
+        await bot.unbanChatMember(channel.chat_id, telegramId);
+        console.log(`✅ Removido do canal: ${channel.name}`);
+        await new Promise(resolve => setTimeout(resolve, 500)); // Rate limit
+      } catch (error) {
+        console.log(`⚠️ Não foi possível remover do canal ${channel.name}: ${error.message}`);
+      }
+    }
+    
+    return true;
+  } catch (error) {
+    console.error('Erro ao remover usuário dos grupos:', error);
+    return false;
+  }
+}
+
 function createAdminRouter({ db = defaultDb, passwords = passwordUtils } = {}) {
   const router = express.Router();
   const { hashPassword, verifyPassword } = passwords;
