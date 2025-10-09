@@ -417,7 +417,7 @@ router.post('/subscribers/import', adminAuth, async (req, res) => {
       sub => sub.email && !csvEmails.has(sub.email.toLowerCase().trim())
     );
 
-    // 3. Processa o CSV (adiciona/atualiza)
+    // 3. Processa o CSV (adiciona/atualiza) - SÍNCRONO
     for (const sub of subscribers) {
       try {
         // Valida dados mínimos
@@ -476,30 +476,59 @@ router.post('/subscribers/import', adminAuth, async (req, res) => {
       }
     }
 
-    // 4. Remove quem não está no CSV (sincronização automática)
-    for (const subToRemove of subscribersToRemove) {
-      try {
-        await db.revokeUserAccess(subToRemove.id);
-        results.removed++;
-        results.details.push({
-          email: subToRemove.email,
-          status: 'removed',
-          reason: 'Não está no CSV - removido automaticamente'
-        });
-      } catch (error) {
-        results.errors++;
-        results.details.push({
-          email: subToRemove.email,
-          status: 'error',
-          reason: `Erro ao remover: ${error.message}`
-        });
-      }
-    }
+    // 4. Se houver remoções, processa em BACKGROUND
+    if (subscribersToRemove.length > 0) {
+      // Responde imediatamente ao usuário
+      res.json({
+        success: true,
+        results,
+        removalsInProgress: subscribersToRemove.length,
+        message: `✅ Importação concluída! ${subscribersToRemove.length} usuário(s) sendo removido(s) em background. Isso pode levar alguns minutos.`
+      });
 
-    res.json({
-      success: true,
-      results
-    });
+      // Processa remoções em background (não espera terminar)
+      (async () => {
+        const BATCH_SIZE = 10; // Processa 10 por vez
+        const DELAY_BETWEEN_BATCHES = 2000; // 2 segundos entre lotes
+        
+        let removedCount = 0;
+        let failedCount = 0;
+
+        for (let i = 0; i < subscribersToRemove.length; i += BATCH_SIZE) {
+          const batch = subscribersToRemove.slice(i, i + BATCH_SIZE);
+          
+          await Promise.all(batch.map(async (sub) => {
+            try {
+              await db.revokeUserAccess(sub.id);
+              removedCount++;
+              console.log(`✅ [${i + removedCount}/${subscribersToRemove.length}] Removido: ${sub.email}`);
+            } catch (error) {
+              failedCount++;
+              console.error(`❌ Erro ao remover ${sub.email}:`, error.message);
+            }
+          }));
+
+          // Delay entre lotes para respeitar rate limits
+          if (i + BATCH_SIZE < subscribersToRemove.length) {
+            await new Promise(resolve => setTimeout(resolve, DELAY_BETWEEN_BATCHES));
+          }
+        }
+
+        console.log(`\n🎉 Processo de remoção concluído!`);
+        console.log(`✅ Removidos com sucesso: ${removedCount}`);
+        console.log(`❌ Falhas: ${failedCount}`);
+      })().catch(error => {
+        console.error('❌ Erro fatal no processo de remoção em background:', error);
+      });
+
+    } else {
+      // Sem remoções, responde normalmente
+      res.json({
+        success: true,
+        results,
+        message: '✅ Importação concluída!'
+      });
+    }
 
   } catch (error) {
     res.status(500).json({ error: error.message });
