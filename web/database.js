@@ -313,6 +313,14 @@ async function revokeUserAccess(subscriberId) {
   try {
     await client.query('BEGIN');
 
+    // Busca o telegram_id antes de deletar
+    const authorizedUser = await client.query(
+      'SELECT telegram_id FROM authorized_users WHERE subscriber_id = $1',
+      [subscriberId]
+    );
+
+    const telegramId = authorizedUser.rows[0]?.telegram_id || 'N/A';
+
     // Remove autorização
     await client.query(
       'DELETE FROM authorized_users WHERE subscriber_id = $1',
@@ -325,11 +333,11 @@ async function revokeUserAccess(subscriberId) {
       [subscriberId]
     );
 
-    // Registra log
+    // Registra log COM telegram_id
     await client.query(
-      `INSERT INTO authorization_logs (subscriber_id, action, timestamp)
-       VALUES ($1, 'revoked', NOW())`,
-      [subscriberId]
+      `INSERT INTO authorization_logs (telegram_id, subscriber_id, action, timestamp)
+       VALUES ($1, $2, 'revoked', NOW())`,
+      [telegramId, subscriberId]
     );
 
     await client.query('COMMIT');
