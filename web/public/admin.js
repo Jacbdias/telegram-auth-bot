@@ -98,14 +98,43 @@ async function apiRequest(endpoint, method = 'GET', body = null) {
 
 // ============== TABS ==============
 
-function showTab(tabName) {
-    // Remove active de todas as tabs
+function showTab(tabName, trigger = null) {
     document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
     document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
-    
-    // Ativa a tab clicada
-    event.target.classList.add('active');
-    document.getElementById(tabName + 'Tab').classList.add('active');
+
+    const tabButton = trigger || document.querySelector(`.tab[data-tab="${tabName}"]`);
+    if (tabButton) {
+        tabButton.classList.add('active');
+    }
+
+    const tabContent = document.getElementById(`${tabName}Tab`);
+    if (tabContent) {
+        tabContent.classList.add('active');
+    }
+}
+
+function navigateDashboard(element) {
+    if (!element) return;
+
+    const action = element.getAttribute('data-action');
+    const tabName = element.getAttribute('data-tab');
+
+    if (action === 'sync') {
+        const syncButton = document.getElementById('syncBtn');
+        if (syncButton) {
+            syncButton.focus();
+            syncButton.click();
+        }
+        return;
+    }
+
+    if (tabName) {
+        const tabButton = document.querySelector(`.tab[data-tab="${tabName}"]`);
+        showTab(tabName, tabButton);
+        if (tabButton) {
+            tabButton.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+    }
 }
 
 // ============== STATS ==============
@@ -754,13 +783,15 @@ async function processImport() {
 async function syncUsers() {
     const btn = document.getElementById('syncBtn');
     const alert = document.getElementById('syncAlert');
-    
+
     if (!confirm('Tem certeza que deseja sincronizar?\n\nIsso vai remover TODOS os usuários inativos dos grupos do Telegram.')) {
         return;
     }
-    
+
     btn.disabled = true;
     btn.innerHTML = '⏳ Sincronizando...';
+    alert.className = 'alert';
+    alert.removeAttribute('style');
     alert.classList.remove('show');
     
     try {
