@@ -395,18 +395,29 @@ function createAdminRouter({ db = defaultDb, passwords = passwordUtils } = {}) {
     }
   });
 
-  // Importação em massa de assinantes
-  router.post('/subscribers/import', adminAuth, async (req, res) => {
-    try {
-      const { subscribers } = req.body; // Array de assinantes
+// Importação em massa de assinantes com sincronização automática
+router.post('/subscribers/import', adminAuth, async (req, res) => {
+  try {
+    const { subscribers } = req.body; // Array de assinantes do CSV
 
-      const results = {
-        success: 0,
+    const results = {
+      success: 0,
       errors: 0,
       skipped: 0,
+      removed: 0,
       details: []
     };
 
+    // 1. Busca todos os assinantes atuais no banco
+    const currentSubscribers = await db.getAllSubscribers();
+    const csvEmails = new Set(subscribers.map(s => s.email?.toLowerCase().trim()).filter(Boolean));
+    
+    // 2. Identifica quem deve ser removido (está no banco mas não está no CSV)
+    const subscribersToRemove = currentSubscribers.filter(
+      sub => sub.email && !csvEmails.has(sub.email.toLowerCase().trim())
+    );
+
+    // 3. Processa o CSV (adiciona/atualiza)
     for (const sub of subscribers) {
       try {
         // Valida dados mínimos
@@ -465,15 +476,35 @@ function createAdminRouter({ db = defaultDb, passwords = passwordUtils } = {}) {
       }
     }
 
-      res.json({
-        success: true,
-        results
-      });
-
-    } catch (error) {
-      res.status(500).json({ error: error.message });
+    // 4. Remove quem não está no CSV (sincronização automática)
+    for (const subToRemove of subscribersToRemove) {
+      try {
+        await db.revokeUserAccess(subToRemove.id);
+        results.removed++;
+        results.details.push({
+          email: subToRemove.email,
+          status: 'removed',
+          reason: 'Não está no CSV - removido automaticamente'
+        });
+      } catch (error) {
+        results.errors++;
+        results.details.push({
+          email: subToRemove.email,
+          status: 'error',
+          reason: `Erro ao remover: ${error.message}`
+        });
+      }
     }
-  });
+
+    res.json({
+      success: true,
+      results
+    });
+
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
 
   // Sincronizar usuários inativos (remove dos grupos)
   router.post('/sync', adminAuth, async (req, res) => {
