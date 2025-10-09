@@ -588,6 +588,10 @@ tbody td {
   color: #334155;
 }
 
+.btn-delete:hover {
+  background: #c2410c;
+}
+
 /* Status badges */
 .status-badge {
   padding: 4px 12px;
