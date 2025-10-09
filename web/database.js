@@ -313,15 +313,45 @@ async function revokeUserAccess(subscriberId) {
   try {
     await client.query('BEGIN');
 
-    // Busca o telegram_id antes de deletar
+    // Busca dados do usuário antes de deletar
     const authorizedUser = await client.query(
-      'SELECT telegram_id FROM authorized_users WHERE subscriber_id = $1',
+      `SELECT au.telegram_id, s.plan 
+       FROM authorized_users au
+       JOIN subscribers s ON au.subscriber_id = s.id
+       WHERE au.subscriber_id = $1`,
       [subscriberId]
     );
 
-    const telegramId = authorizedUser.rows[0]?.telegram_id || 'N/A';
+    const telegramId = authorizedUser.rows[0]?.telegram_id;
+    const plan = authorizedUser.rows[0]?.plan;
 
-    // Remove autorização
+    // Remove dos grupos do Telegram (se tiver telegram_id)
+    if (telegramId && plan) {
+      try {
+        const TelegramBot = require('node-telegram-bot-api');
+        const token = process.env.TELEGRAM_BOT_TOKEN;
+        const bot = new TelegramBot(token);
+        
+        const allChannels = await getAllChannels();
+        const userChannels = allChannels.filter(
+          ch => ch.plan === plan || ch.plan === 'all'
+        );
+        
+        for (const channel of userChannels) {
+          try {
+            await bot.banChatMember(channel.chat_id, telegramId);
+            await bot.unbanChatMember(channel.chat_id, telegramId);
+            console.log(`✅ Removido do canal: ${channel.name}`);
+          } catch (error) {
+            console.log(`⚠️ Erro ao remover do canal ${channel.name}`);
+          }
+        }
+      } catch (telegramError) {
+        console.error('⚠️ Erro ao remover do Telegram:', telegramError);
+      }
+    }
+
+    // Remove autorização do banco
     await client.query(
       'DELETE FROM authorized_users WHERE subscriber_id = $1',
       [subscriberId]
@@ -333,11 +363,11 @@ async function revokeUserAccess(subscriberId) {
       [subscriberId]
     );
 
-    // Registra log COM telegram_id
+    // Registra log
     await client.query(
       `INSERT INTO authorization_logs (telegram_id, subscriber_id, action, timestamp)
        VALUES ($1, $2, 'revoked', NOW())`,
-      [telegramId, subscriberId]
+      [telegramId || 'N/A', subscriberId]
     );
 
     await client.query('COMMIT');
