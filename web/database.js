@@ -306,7 +306,7 @@ async function getUserBySubscriberId(subscriberId) {
   }
 }
 
-// Remove acesso do usuário completamente
+// Remove acesso do usuário completamente (DELETA da tabela)
 async function revokeUserAccess(subscriberId) {
   const client = await pool.connect();
   
@@ -342,6 +342,7 @@ async function revokeUserAccess(subscriberId) {
             await bot.banChatMember(channel.chat_id, telegramId);
             await bot.unbanChatMember(channel.chat_id, telegramId);
             console.log(`✅ Removido do canal: ${channel.name}`);
+            await new Promise(resolve => setTimeout(resolve, 500));
           } catch (error) {
             console.log(`⚠️ Erro ao remover do canal ${channel.name}`);
           }
@@ -351,23 +352,23 @@ async function revokeUserAccess(subscriberId) {
       }
     }
 
+    // Registra log ANTES de deletar
+    await client.query(
+      `INSERT INTO authorization_logs (telegram_id, subscriber_id, action, timestamp)
+       VALUES ($1, $2, 'revoked', NOW())`,
+      [telegramId || 'N/A', subscriberId]
+    );
+
     // Remove autorização do banco
     await client.query(
       'DELETE FROM authorized_users WHERE subscriber_id = $1',
       [subscriberId]
     );
 
-    // Atualiza status do assinante
+    // DELETA o assinante completamente (não marca como inactive)
     await client.query(
-      `UPDATE subscribers SET status = 'inactive' WHERE id = $1`,
+      `DELETE FROM subscribers WHERE id = $1`,
       [subscriberId]
-    );
-
-    // Registra log
-    await client.query(
-      `INSERT INTO authorization_logs (telegram_id, subscriber_id, action, timestamp)
-       VALUES ($1, $2, 'revoked', NOW())`,
-      [telegramId || 'N/A', subscriberId]
     );
 
     await client.query('COMMIT');
