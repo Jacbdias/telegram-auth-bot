@@ -469,18 +469,58 @@ async function updateSubscriber(id, name, email, phone, plan, status) {
       [name, email, phone, plan, status, id]
     );
     
-    // Se mudou para inactive, revoga autorização
+    // Se mudou para inactive, revoga autorização E REMOVE DOS GRUPOS
     if (oldData.rows.length > 0 && oldData.rows[0].status === 'active' && status === 'inactive') {
+      // Busca telegram_id e plano antes de revogar
+      const authUser = await client.query(
+        `SELECT au.telegram_id, s.plan 
+         FROM authorized_users au
+         JOIN subscribers s ON au.subscriber_id = s.id
+         WHERE au.subscriber_id = $1`,
+        [id]
+      );
+
+      const telegramId = authUser.rows[0]?.telegram_id;
+      const userPlan = authUser.rows[0]?.plan;
+      const tgId = telegramId || 'N/A';
+
+      // Remove dos grupos do Telegram
+      if (telegramId && userPlan) {
+        try {
+          const TelegramBot = require('node-telegram-bot-api');
+          const token = process.env.TELEGRAM_BOT_TOKEN;
+          const bot = new TelegramBot(token);
+          
+          const allChannels = await getAllChannels();
+          const userChannels = allChannels.filter(
+            ch => ch.plan === userPlan || ch.plan === 'all'
+          );
+          
+          for (const channel of userChannels) {
+            try {
+              await bot.banChatMember(channel.chat_id, telegramId);
+              await bot.unbanChatMember(channel.chat_id, telegramId);
+              console.log(`✅ Removido do canal: ${channel.name}`);
+              await new Promise(resolve => setTimeout(resolve, 500));
+            } catch (error) {
+              console.log(`⚠️ Erro ao remover do canal ${channel.name}`);
+            }
+          }
+        } catch (telegramError) {
+          console.error('⚠️ Erro ao remover do Telegram:', telegramError);
+        }
+      }
+
       await client.query(
         'UPDATE authorized_users SET authorized = false WHERE subscriber_id = $1',
         [id]
       );
       
-      // Registra log
+      // Registra log COM telegram_id
       await client.query(
-        `INSERT INTO authorization_logs (subscriber_id, action, timestamp)
-         VALUES ($1, 'revoked', NOW())`,
-        [id]
+        `INSERT INTO authorization_logs (telegram_id, subscriber_id, action, timestamp)
+         VALUES ($1, $2, 'revoked', NOW())`,
+        [tgId, id]
       );
     }
     
@@ -491,6 +531,17 @@ async function updateSubscriber(id, name, email, phone, plan, status) {
         [id]
       );
     }
+    
+    await client.query('COMMIT');
+    return true;
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('Erro ao atualizar assinante:', error);
+    throw error;
+  } finally {
+    client.release();
+  }
+}
     
     await client.query('COMMIT');
     return true;
