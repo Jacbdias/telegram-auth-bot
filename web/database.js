@@ -543,17 +543,6 @@ async function updateSubscriber(id, name, email, phone, plan, status) {
     client.release();
   }
 }
-    
-    await client.query('COMMIT');
-    return true;
-  } catch (error) {
-    await client.query('ROLLBACK');
-    console.error('Erro ao atualizar assinante:', error);
-    throw error;
-  } finally {
-    client.release();
-  }
-}
 
 // Listar todos os canais
 async function getAllChannels() {
