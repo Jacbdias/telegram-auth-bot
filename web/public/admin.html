@@ -353,68 +353,113 @@
         <div class="login-box">
             <h1>🔐 Painel Admin</h1>
             <div id="loginAlert" class="alert alert-error"></div>
-<form id="loginForm">
-    <div class="form-group">
-        <label>Usuário</label>
-        <input type="text" id="username" placeholder="Digite seu usuário" required autocomplete="username">
-    </div>
-    <div class="form-group">
-        <label>Senha</label>
-        <input type="password" id="password" placeholder="Digite a senha" required autocomplete="current-password">
-    </div>
-    <button type="submit" class="btn">Entrar</button>
-</form>
+            <form id="loginForm">
+                <div class="form-group">
+                    <label>Usuário</label>
+                    <input type="text" id="username" placeholder="Digite seu usuário" required autocomplete="username">
+                </div>
+                <div class="form-group">
+                    <label>Senha</label>
+                    <input type="password" id="password" placeholder="Digite a senha" required autocomplete="current-password">
+                </div>
+                <button type="submit" class="btn btn-primary">Entrar</button>
+            </form>
         </div>
     </div>
 
     <!-- Dashboard -->
     <div id="dashboard" class="dashboard">
-        <div class="header">
-<h1>📊 Painel Administrativo</h1>
-<p style="font-size: 14px; color: #718096; margin-top: 5px;">Bem-vindo, <strong id="loggedUser">Admin</strong></p>
-            <button onclick="logout()">Sair</button>
-        </div>
-
-        <div class="container">
-            <!-- Stats -->
-            <div class="stats-grid">
-                <div class="stat-card">
-                    <h3>Total de Assinantes</h3>
-                    <div class="number" id="totalSubscribers">0</div>
-                </div>
-                <div class="stat-card">
-                    <h3>Usuários Autorizados</h3>
-                    <div class="number" id="totalAuthorized">0</div>
-                </div>
-                <div class="stat-card">
-                    <h3>Total de Canais</h3>
-                    <div class="number" id="totalChannels">0</div>
-                </div>
-            </div>
-
-            <!-- ADICIONE ISTO AQUI -->
-            <div style="background: white; padding: 20px; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); margin-bottom: 30px;">
-                <div style="display: flex; justify-content: space-between; align-items: center;">
-                    <div>
-                        <h3 style="margin-bottom: 5px;">🔄 Sincronização de Usuários</h3>
-                        <p style="color: #718096; font-size: 14px; margin: 0;">
-                            Remove usuários inativos dos grupos do Telegram
-                        </p>
+        <div class="dashboard-surface">
+            <div class="container">
+                <div class="header">
+                    <div class="header-info">
+                        <span class="header-eyebrow">Central de Controle</span>
+                        <h1>Dashboard</h1>
+                        <p>Escolha a área que deseja gerenciar</p>
                     </div>
-                    <button class="btn" onclick="syncUsers()" id="syncBtn" style="min-width: 180px;">
-                        🔄 Sincronizar Agora
+                    <div class="header-user">
+                        <div class="header-user-meta">
+                            <span class="header-user-label">Logado como</span>
+                            <span class="header-user-name" id="loggedUser">Admin</span>
+                        </div>
+                        <button class="header-logout" onclick="logout()">Sair</button>
+                    </div>
+                </div>
+
+                <div class="cards-grid">
+                    <button type="button" class="card-modern" data-tab="subscribers" onclick="navigateDashboard(this)">
+                        <div class="card-content">
+                            <div class="card-icon">📋</div>
+                            <h3 class="card-title">Assinantes</h3>
+                            <p class="card-description">Gerencie cadastros, planos e autorizações.</p>
+                        </div>
+                    </button>
+                    <button type="button" class="card-modern" data-tab="channels" onclick="navigateDashboard(this)">
+                        <div class="card-content">
+                            <div class="card-icon">📡</div>
+                            <h3 class="card-title">Canais</h3>
+                            <p class="card-description">Controle canais, planos vinculados e status.</p>
+                        </div>
+                    </button>
+                    <button type="button" class="card-modern" data-tab="admins" onclick="navigateDashboard(this)">
+                        <div class="card-content">
+                            <div class="card-icon">🛡️</div>
+                            <h3 class="card-title">Equipe</h3>
+                            <p class="card-description">Gerencie acessos de administradores com segurança.</p>
+                        </div>
+                    </button>
+                    <button type="button" class="card-modern" data-tab="logs" onclick="navigateDashboard(this)">
+                        <div class="card-content">
+                            <div class="card-icon">🗄️</div>
+                            <h3 class="card-title">Logs</h3>
+                            <p class="card-description">Acompanhe registros e atividades recentes.</p>
+                        </div>
+                    </button>
+                    <button type="button" class="card-modern" data-action="sync" onclick="navigateDashboard(this)">
+                        <span class="badge-new">Novo</span>
+                        <div class="card-content">
+                            <div class="card-icon">🔄</div>
+                            <h3 class="card-title">Sincronizar</h3>
+                            <p class="card-description">Remova usuários inativos dos grupos em um clique.</p>
+                        </div>
                     </button>
                 </div>
-                <div id="syncAlert" class="alert" style="margin-top: 15px; margin-bottom: 0;"></div>
-            </div>
 
-            <!-- Tabs -->
-            <div class="tabs">
-                <button class="tab active" onclick="showTab('subscribers')">Assinantes</button>
-                <button class="tab" onclick="showTab('channels')">Canais</button>
-                <button class="tab" onclick="showTab('admins')">Administradores</button>
-                <button class="tab" onclick="showTab('logs')">Logs</button>
-            </div>
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <h3>Total de Assinantes</h3>
+                        <div class="number" id="totalSubscribers">0</div>
+                    </div>
+                    <div class="stat-card">
+                        <h3>Usuários Autorizados</h3>
+                        <div class="number" id="totalAuthorized">0</div>
+                    </div>
+                    <div class="stat-card">
+                        <h3>Total de Canais</h3>
+                        <div class="number" id="totalChannels">0</div>
+                    </div>
+                </div>
+
+                <div class="action-banner">
+                    <div class="action-banner-content">
+                        <div class="action-banner-text">
+                            <span class="action-banner-eyebrow">Sincronização inteligente</span>
+                            <h3>Atualize automaticamente seus grupos</h3>
+                            <p>Garanta que apenas clientes ativos permaneçam com acesso aos canais do Telegram.</p>
+                        </div>
+                        <button class="btn btn-primary action-banner-button" onclick="syncUsers()" id="syncBtn">
+                            🔄 Sincronizar Agora
+                        </button>
+                    </div>
+                    <div id="syncAlert" class="alert"></div>
+                </div>
+
+                <div class="tabs">
+                    <button class="tab active" data-tab="subscribers" onclick="showTab('subscribers', this)">Assinantes</button>
+                    <button class="tab" data-tab="channels" onclick="showTab('channels', this)">Canais</button>
+                    <button class="tab" data-tab="admins" onclick="showTab('admins', this)">Administradores</button>
+                    <button class="tab" data-tab="logs" onclick="showTab('logs', this)">Logs</button>
+                </div>
 
             <!-- Tab: Assinantes -->
             <div id="subscribersTab" class="tab-content active">
@@ -463,6 +508,7 @@
             </div>
         </div>
     </div>
+</div>
 
     <!-- Modal: Adicionar/Editar Assinante -->
     <div id="subscriberModal" class="modal">
@@ -502,7 +548,7 @@
                     </select>
                 </div>
                 <div style="display: flex; gap: 10px; margin-top: 20px;">
-                    <button type="submit" class="btn">Salvar</button>
+                    <button type="submit" class="btn btn-primary">Salvar</button>
                     <button type="button" class="btn btn-secondary" onclick="closeSubscriberModal()">Cancelar</button>
                 </div>
             </form>
@@ -552,7 +598,7 @@
                     </select>
                 </div>
                 <div style="display: flex; gap: 10px; margin-top: 20px;">
-                    <button type="submit" class="btn">Salvar</button>
+                    <button type="submit" class="btn btn-primary">Salvar</button>
                     <button type="button" class="btn btn-secondary" onclick="closeChannelModal()">Cancelar</button>
                 </div>
             </form>
@@ -575,7 +621,7 @@
                     <input type="password" id="adminPassword" placeholder="Senha (mínimo 8 caracteres)" required autocomplete="new-password">
                 </div>
                 <div style="display: flex; gap: 10px; margin-top: 20px;">
-                    <button type="submit" class="btn">Salvar</button>
+                    <button type="submit" class="btn btn-primary">Salvar</button>
                     <button type="button" class="btn btn-secondary" onclick="closeAdminModal()">Cancelar</button>
                 </div>
             </form>
@@ -617,7 +663,7 @@
         </div>
 
         <div style="display: flex; gap: 10px; margin-top: 20px;">
-            <button class="btn" onclick="processImport()" id="importBtn">Importar</button>
+            <button class="btn btn-primary" onclick="processImport()" id="importBtn">Importar</button>
             <button type="button" class="btn btn-secondary" onclick="closeImportModal()">Fechar</button>
         </div>
     </div>
