@@ -5,6 +5,7 @@ const passwordUtils = require('./passwords');
 function createAdminRouter({ db = defaultDb, passwords = passwordUtils } = {}) {
   const router = express.Router();
   const { hashPassword, verifyPassword } = passwords;
+  const supportUsername = process.env.SUPPORT_USERNAME || '@suportefatosdabolsa';
 
   // Usuários de fallback (para compatibilidade)
   const fallbackUsers = {
@@ -231,8 +232,76 @@ function createAdminRouter({ db = defaultDb, passwords = passwordUtils } = {}) {
   // Remover assinante (revoga acesso)
   router.delete('/subscribers/:id', adminAuth, async (req, res) => {
     try {
-      await db.revokeUserAccess(req.params.id);
-      res.json({ success: true, message: 'Assinante removido e acesso revogado' });
+      const subscriberId = req.params.id;
+      const subscriber = await db.getSubscriberById(subscriberId);
+
+      if (!subscriber) {
+        return res.status(404).json({ error: 'Assinante não encontrado' });
+      }
+
+      const authorizedUser = await db.getUserBySubscriberId(subscriberId);
+      let removedFromChannels = 0;
+      const failedChannels = [];
+      let notifiedUser = false;
+      let telegramRemovalSkipped = false;
+
+      if (authorizedUser?.telegram_id) {
+        const token = process.env.TELEGRAM_BOT_TOKEN;
+
+        if (token) {
+          const TelegramBot = require('node-telegram-bot-api');
+          const bot = new TelegramBot(token, { polling: false });
+          const channels = await db.getUserChannels(subscriber.plan);
+
+          try {
+            for (const channel of channels) {
+              try {
+                await bot.banChatMember(channel.chat_id, authorizedUser.telegram_id);
+                await bot.unbanChatMember(channel.chat_id, authorizedUser.telegram_id);
+                removedFromChannels++;
+              } catch (error) {
+                failedChannels.push({
+                  channel: channel.name,
+                  error: error.message
+                });
+              }
+
+              await new Promise((resolve) => setTimeout(resolve, 500));
+            }
+
+            try {
+              await bot.sendMessage(
+                authorizedUser.telegram_id,
+                `⚠️ Seu acesso aos canais exclusivos foi revogado. Caso haja algum engano, entre em contato com o suporte: ${supportUsername}`
+              );
+              notifiedUser = true;
+            } catch (error) {
+              // Usuário pode ter bloqueado o bot — não interrompe o fluxo
+            }
+          } finally {
+            if (typeof bot.close === 'function') {
+              try {
+                await bot.close();
+              } catch (closeError) {
+                // Ignora erros ao encerrar o bot auxiliar
+              }
+            }
+          }
+        } else {
+          telegramRemovalSkipped = true;
+        }
+      }
+
+      await db.revokeUserAccess(subscriberId);
+
+      res.json({
+        success: true,
+        message: 'Assinante removido e acesso revogado',
+        removedFromChannels,
+        failedChannels,
+        notifiedUser,
+        telegramRemovalSkipped
+      });
     } catch (error) {
       res.status(500).json({ error: error.message });
     }
