@@ -20,6 +20,7 @@ body {
   justify-content: center;
   padding: 24px;
   background: #f1f5f9;
+
 }
 
 .login-box {
@@ -30,6 +31,7 @@ body {
   padding: 32px;
   box-shadow: 0 20px 40px rgba(15, 23, 42, 0.12);
   color: #1f2937;
+
 }
 
 .login-box h1 {
@@ -53,6 +55,7 @@ body {
 .login-box .form-group input:focus {
   border-color: #1f2937;
   box-shadow: 0 0 0 3px rgba(31, 41, 55, 0.15);
+
 }
 
 .container {
@@ -217,6 +220,14 @@ body {
 .tab.active {
   color: #111827;
   border-bottom-color: #111827;
+}
+
+.tab-content {
+  display: none;
+}
+
+.tab-content.active {
+  display: block;
 }
 
 .tab-content {
@@ -525,6 +536,17 @@ tbody td {
   background: #166534;
 }
 
+.btn-success {
+  background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%);
+  color: #ffffff;
+  box-shadow: 0 6px 18px rgba(34, 197, 94, 0.35);
+}
+
+.btn-success:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 24px rgba(34, 197, 94, 0.4);
+}
+
 .btn-danger {
   background: #b91c1c;
   color: #fef2f2;
@@ -532,6 +554,11 @@ tbody td {
 
 .btn-danger:hover {
   background: #991b1b;
+}
+
+.btn-danger:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 24px rgba(239, 68, 68, 0.35);
 }
 
 .btn-secondary {
@@ -706,6 +733,30 @@ tbody td {
   color: #0f172a;
 }
 
+.form-group input,
+.form-group select,
+.form-group textarea {
+  width: 100%;
+  padding: 12px 16px;
+  border: 2px solid #e2e8f0;
+  border-radius: 10px;
+  font-size: 14px;
+  transition: border-color 0.3s ease, box-shadow 0.3s ease;
+  background: #f8fafc;
+}
+
+.form-group input:focus,
+.form-group select:focus,
+.form-group textarea:focus {
+  border-color: #00ff41;
+  box-shadow: 0 0 0 4px rgba(0, 255, 65, 0.15);
+  outline: none;
+}
+
+.modal .form-group label {
+  color: #0f172a;
+}
+
 /* Responsivo */
 @media (max-width: 768px) {
   .header h1 {
@@ -732,6 +783,15 @@ tbody td {
 
   .card-title {
     font-size: 22px;
+  }
+
+  .action-banner-content {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .action-banner-button {
+    width: 100%;
   }
 
   .action-banner-content {
