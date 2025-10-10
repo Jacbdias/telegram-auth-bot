@@ -440,6 +440,58 @@
             <!-- Tab: Canais -->
             <div id="channelsTab" class="tab-content">
                 <div class="card">
+                    <h2>Enviar mensagem para canais</h2>
+                    <div id="broadcastAlert" class="alert"></div>
+                    <form id="broadcastForm" class="stacked-form">
+                        <div class="form-group">
+                            <label>Selecione os canais</label>
+                            <div class="checkbox-actions">
+                                <div class="button-group">
+                                    <button type="button" class="btn btn-small" id="broadcastSelectAll">Selecionar todos</button>
+                                    <button type="button" class="btn btn-small btn-secondary" id="broadcastClear">Limpar seleção</button>
+                                </div>
+                                <span id="broadcastSelectedCount" class="selected-count">Nenhum canal ativo disponível</span>
+                            </div>
+                            <div class="checkbox-list" id="broadcastChannelList"></div>
+                        </div>
+
+                        <div class="form-group">
+                            <label>Mensagem</label>
+                            <textarea id="broadcastMessage" rows="4" placeholder="Escreva a mensagem que será enviada"></textarea>
+                            <p class="form-hint">Emojis são suportados normalmente. A mensagem pode ficar em branco caso você envie apenas uma imagem.</p>
+                        </div>
+
+                        <div class="form-group">
+                            <label>Imagem (opcional)</label>
+                            <input type="file" id="broadcastMedia" accept="image/*">
+                            <p class="form-hint">Formatos aceitos: JPG, PNG, GIF ou WEBP com até 7&nbsp;MB.</p>
+                        </div>
+
+                        <div class="form-group">
+                            <label>Formato</label>
+                            <select id="broadcastParseMode">
+                                <option value="">Texto simples</option>
+                                <option value="HTML">HTML</option>
+                                <option value="MarkdownV2">Markdown V2</option>
+                                <option value="Markdown">Markdown (legado)</option>
+                            </select>
+                            <p class="form-hint">Para negrito use <code>&lt;b&gt;texto&lt;/b&gt;</code> no modo HTML ou <code>**texto**</code> no modo Markdown V2.</p>
+                        </div>
+
+                        <div class="form-group inline">
+                            <label>
+                                <input type="checkbox" id="broadcastDisableNotification">
+                                Enviar sem notificação (silencioso)
+                            </label>
+                        </div>
+
+                        <div class="button-row">
+                            <button type="submit" class="btn btn-primary" id="broadcastSubmit">Enviar mensagem</button>
+                        </div>
+                    </form>
+                </div>
+
+                <div class="card">
                     <h2>
                         Canais
                         <button class="btn btn-success btn-small" onclick="openAddChannelModal()">+ Novo Canal</button>

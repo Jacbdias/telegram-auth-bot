@@ -38,6 +38,13 @@ function createAdminRouter({ db = defaultDb, passwords = passwordUtils } = {}) {
   const router = express.Router();
   const { hashPassword, verifyPassword } = passwords;
   const supportUsername = process.env.SUPPORT_USERNAME || '@suportefatosdabolsa';
+  const MAX_BROADCAST_MEDIA_SIZE = 7 * 1024 * 1024; // 7MB
+  const ALLOWED_IMAGE_MIME_TYPES = new Set([
+    'image/jpeg',
+    'image/png',
+    'image/gif',
+    'image/webp'
+  ]);
 
   // Usuários de fallback (para compatibilidade)
   const fallbackUsers = {
@@ -380,6 +387,354 @@ function createAdminRouter({ db = defaultDb, passwords = passwordUtils } = {}) {
       res.json({ success: true });
     } catch (error) {
       res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Enviar mensagem para canais do Telegram
+  router.post('/broadcast', adminAuth, async (req, res) => {
+    const { channelIds: rawChannelIds, message, parseMode, disableNotification, media } = req.body;
+
+    const parseChannelIds = (rawValue) => {
+      if (Array.isArray(rawValue)) {
+        return rawValue;
+      }
+
+      if (typeof rawValue === 'string' && rawValue.trim()) {
+        try {
+          const parsed = JSON.parse(rawValue);
+
+          if (Array.isArray(parsed)) {
+            return parsed;
+          }
+        } catch (error) {
+          const parts = rawValue
+            .split(',')
+            .map((value) => value.trim())
+            .filter(Boolean);
+
+          if (parts.length > 0) {
+            return parts;
+          }
+        }
+      }
+
+      return [];
+    };
+
+    const channelIds = parseChannelIds(rawChannelIds);
+
+    if (!Array.isArray(channelIds) || channelIds.length === 0) {
+      return res.status(400).json({ error: 'Selecione pelo menos um canal.' });
+    }
+
+    const text = typeof message === 'string' ? message.trim() : '';
+
+    const sanitizeBoolean = (value) => {
+      if (typeof value === 'boolean') {
+        return value;
+      }
+
+      if (typeof value === 'string') {
+        return value === 'true' || value === '1';
+      }
+
+      if (typeof value === 'number') {
+        return value !== 0;
+      }
+
+      return false;
+    };
+
+    let mediaPayload = null;
+
+    if (media && typeof media === 'object') {
+      const { data, type, name, size } = media;
+
+      if (!data || typeof data !== 'string') {
+        return res.status(400).json({ error: 'Arquivo de imagem inválido.' });
+      }
+
+      const cleanedData = (data.includes(',') ? data.split(',').pop() : data).trim();
+
+      if (!cleanedData) {
+        return res.status(400).json({ error: 'Não foi possível processar a imagem enviada.' });
+      }
+
+      const normalizedData = cleanedData.replace(/\s+/g, '');
+
+      let buffer;
+
+      try {
+        buffer = Buffer.from(normalizedData, 'base64');
+      } catch (error) {
+        return res.status(400).json({ error: 'Não foi possível processar a imagem enviada.' });
+      }
+
+      if (!buffer || buffer.length === 0) {
+        return res.status(400).json({ error: 'Arquivo de imagem vazio.' });
+      }
+
+      if (buffer.length > MAX_BROADCAST_MEDIA_SIZE) {
+        return res.status(413).json({ error: 'A imagem deve ter no máximo 7MB.' });
+      }
+
+      if (type && !ALLOWED_IMAGE_MIME_TYPES.has(type)) {
+        return res.status(415).json({ error: 'Formato de imagem não suportado. Use JPG, PNG, GIF ou WEBP.' });
+      }
+
+      const numericSize =
+        typeof size === 'number'
+          ? size
+          : (typeof size === 'string' && size.trim() ? Number(size) : null);
+
+      if (typeof numericSize === 'number' && !Number.isNaN(numericSize) && numericSize > MAX_BROADCAST_MEDIA_SIZE) {
+        return res.status(413).json({ error: 'A imagem selecionada ultrapassa o limite permitido.' });
+      }
+
+      mediaPayload = {
+        buffer,
+        name: typeof name === 'string' && name ? name : 'broadcast-image',
+        type: typeof type === 'string' && type ? type : undefined
+      };
+    }
+
+    if (!text && !mediaPayload) {
+      return res.status(400).json({ error: 'Informe a mensagem que deseja enviar ou selecione uma imagem.' });
+    }
+
+    const numericIds = channelIds.map((id) => Number(id));
+
+    if (numericIds.some((id) => Number.isNaN(id))) {
+      return res.status(400).json({ error: 'Lista de canais inválida.' });
+    }
+
+    const disableNotificationFlag = sanitizeBoolean(disableNotification);
+
+    const allowedParseModes = ['Markdown', 'MarkdownV2', 'HTML'];
+    let selectedParseMode = null;
+
+    if (parseMode) {
+      if (!allowedParseModes.includes(parseMode)) {
+        return res.status(400).json({ error: 'Formato de mensagem inválido.' });
+      }
+
+      selectedParseMode = parseMode;
+    }
+
+    const token = process.env.TELEGRAM_BOT_TOKEN;
+
+    if (!token) {
+      return res.status(500).json({ error: 'Token do bot não configurado.' });
+    }
+
+    const markdownV2Selected = selectedParseMode === 'MarkdownV2';
+
+    const isMarkdownV2ParseError = (error) => {
+      if (!error || typeof error !== 'object') {
+        return false;
+      }
+
+      if (error.code !== 'ETELEGRAM') {
+        return false;
+      }
+
+      const description =
+        (error.response &&
+          error.response.body &&
+          typeof error.response.body.description === 'string' &&
+          error.response.body.description) ||
+        (typeof error.message === 'string' ? error.message : '');
+
+      const errorCode =
+        error.response &&
+        error.response.body &&
+        typeof error.response.body.error_code === 'number'
+          ? error.response.body.error_code
+          : null;
+
+      if (errorCode !== 400) {
+        return false;
+      }
+
+      return description.toLowerCase().includes('parse');
+    };
+
+    const withoutParseMode = (options) => {
+      if (!options || typeof options !== 'object') {
+        return {};
+      }
+
+      const clone = { ...options };
+      delete clone.parse_mode;
+      return clone;
+    };
+
+    try {
+      const channels = await db.getAllChannels();
+      const channelMap = new Map(channels.map((channel) => [Number(channel.id), channel]));
+      const failed = [];
+      const targets = [];
+
+      numericIds.forEach((id) => {
+        const channel = channelMap.get(id);
+
+        if (!channel) {
+          failed.push({ id, reason: 'Canal não encontrado' });
+          return;
+        }
+
+        if (!channel.active) {
+          failed.push({
+            id: channel.id,
+            name: channel.name,
+            chat_id: channel.chat_id,
+            reason: 'Canal inativo'
+          });
+          return;
+        }
+
+        targets.push(channel);
+      });
+
+      if (targets.length === 0) {
+        return res.status(400).json({ error: 'Nenhum canal ativo disponível para envio.' });
+      }
+
+      const TelegramBot = require('node-telegram-bot-api');
+      const bot = new TelegramBot(token, { polling: false });
+
+      const sent = [];
+
+      for (let index = 0; index < targets.length; index += 1) {
+        const channel = targets[index];
+
+        try {
+          const channelWarnings = [];
+
+          if (mediaPayload) {
+            const captionTooLong = Boolean(text) && text.length > 1024;
+            const photoOptions = { disable_notification: disableNotificationFlag };
+
+            if (text && !captionTooLong) {
+              photoOptions.caption = text;
+
+              if (selectedParseMode) {
+                photoOptions.parse_mode = selectedParseMode;
+              }
+            }
+
+            const fileOptions = {};
+
+            if (mediaPayload.name) {
+              fileOptions.filename = mediaPayload.name;
+            }
+
+            if (mediaPayload.type) {
+              fileOptions.contentType = mediaPayload.type;
+            }
+
+            try {
+              if (Object.keys(fileOptions).length > 0) {
+                await bot.sendPhoto(channel.chat_id, mediaPayload.buffer, photoOptions, fileOptions);
+              } else {
+                await bot.sendPhoto(channel.chat_id, mediaPayload.buffer, photoOptions);
+              }
+            } catch (photoError) {
+              if (markdownV2Selected && isMarkdownV2ParseError(photoError)) {
+                const fallbackOptions = withoutParseMode(photoOptions);
+
+                if (Object.keys(fileOptions).length > 0) {
+                  await bot.sendPhoto(channel.chat_id, mediaPayload.buffer, fallbackOptions, fileOptions);
+                } else {
+                  await bot.sendPhoto(channel.chat_id, mediaPayload.buffer, fallbackOptions);
+                }
+
+                channelWarnings.push('A legenda foi enviada sem formatação Markdown V2 por conter caracteres não escapados.');
+              } else {
+                throw photoError;
+              }
+            }
+
+            if (text && captionTooLong) {
+              const messageOptions = { disable_notification: disableNotificationFlag };
+
+              if (selectedParseMode) {
+                messageOptions.parse_mode = selectedParseMode;
+              }
+
+              try {
+                await bot.sendMessage(channel.chat_id, text, messageOptions);
+              } catch (messageError) {
+                if (markdownV2Selected && isMarkdownV2ParseError(messageError)) {
+                  const fallbackMessageOptions = withoutParseMode(messageOptions);
+                  await bot.sendMessage(channel.chat_id, text, fallbackMessageOptions);
+                  channelWarnings.push('A mensagem complementar foi enviada sem formatação Markdown V2 por conter caracteres não escapados.');
+                } else {
+                  throw messageError;
+                }
+              }
+            }
+          } else if (text) {
+            const options = { disable_notification: disableNotificationFlag };
+
+            if (selectedParseMode) {
+              options.parse_mode = selectedParseMode;
+            }
+
+            try {
+              await bot.sendMessage(channel.chat_id, text, options);
+            } catch (messageError) {
+              if (markdownV2Selected && isMarkdownV2ParseError(messageError)) {
+                const fallbackOptions = withoutParseMode(options);
+                await bot.sendMessage(channel.chat_id, text, fallbackOptions);
+                channelWarnings.push('Mensagem enviada sem formatação Markdown V2 por conter caracteres não escapados.');
+              } else {
+                throw messageError;
+              }
+            }
+          }
+
+          const payload = {
+            id: channel.id,
+            name: channel.name,
+            chat_id: channel.chat_id
+          };
+
+          if (channelWarnings.length > 0) {
+            payload.warnings = channelWarnings;
+          }
+
+          sent.push(payload);
+        } catch (error) {
+          failed.push({
+            id: channel.id,
+            name: channel.name,
+            chat_id: channel.chat_id,
+            reason: error.message
+          });
+        }
+
+        if (index < targets.length - 1) {
+          await new Promise((resolve) => setTimeout(resolve, 400));
+        }
+      }
+
+      if (typeof bot.close === 'function') {
+        try {
+          await bot.close();
+        } catch (closeError) {
+          console.warn('Não foi possível encerrar instância auxiliar do bot:', closeError.message);
+        }
+      }
+
+      res.json({
+        success: failed.length === 0,
+        sent,
+        failed
+      });
+    } catch (error) {
+      console.error('Erro ao enviar mensagem para canais:', error);
+      res.status(500).json({ error: 'Erro ao enviar mensagem para os canais.' });
     }
   });
 
