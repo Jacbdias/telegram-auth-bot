@@ -126,30 +126,6 @@ function showTab(tabName, trigger = null) {
     }
 }
 
-function navigateDashboard(element) {
-    if (!element) return;
-
-    const action = element.getAttribute('data-action');
-    const tabName = element.getAttribute('data-tab');
-
-    if (action === 'sync') {
-        const syncButton = document.getElementById('syncBtn');
-        if (syncButton) {
-            syncButton.focus();
-            syncButton.click();
-        }
-        return;
-    }
-
-    if (tabName) {
-        const tabButton = document.querySelector(`.tab[data-tab="${tabName}"]`);
-        showTab(tabName, tabButton);
-        if (tabButton) {
-            tabButton.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        }
-    }
-}
-
 // ============== STATS ==============
 
 async function loadStats() {
