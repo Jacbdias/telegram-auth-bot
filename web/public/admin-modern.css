@@ -800,6 +800,10 @@ tbody td {
     padding: 24px;
   }
 
+  .action-banner {
+    padding: 24px;
+  }
+
   .action-banner-content {
     flex-direction: column;
     align-items: flex-start;
