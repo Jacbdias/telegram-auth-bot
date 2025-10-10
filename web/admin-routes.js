@@ -38,6 +38,13 @@ function createAdminRouter({ db = defaultDb, passwords = passwordUtils } = {}) {
   const router = express.Router();
   const { hashPassword, verifyPassword } = passwords;
   const supportUsername = process.env.SUPPORT_USERNAME || '@suportefatosdabolsa';
+  const MAX_BROADCAST_MEDIA_SIZE = 7 * 1024 * 1024; // 7MB
+  const ALLOWED_IMAGE_MIME_TYPES = new Set([
+    'image/jpeg',
+    'image/png',
+    'image/gif',
+    'image/webp'
+  ]);
 
   // Usuários de fallback (para compatibilidade)
   const fallbackUsers = {
@@ -385,7 +392,36 @@ function createAdminRouter({ db = defaultDb, passwords = passwordUtils } = {}) {
 
   // Enviar mensagem para canais do Telegram
   router.post('/broadcast', adminAuth, async (req, res) => {
-    const { channelIds, message, parseMode, disableNotification } = req.body;
+    const { channelIds: rawChannelIds, message, parseMode, disableNotification, media } = req.body;
+
+    const parseChannelIds = (rawValue) => {
+      if (Array.isArray(rawValue)) {
+        return rawValue;
+      }
+
+      if (typeof rawValue === 'string' && rawValue.trim()) {
+        try {
+          const parsed = JSON.parse(rawValue);
+
+          if (Array.isArray(parsed)) {
+            return parsed;
+          }
+        } catch (error) {
+          const parts = rawValue
+            .split(',')
+            .map((value) => value.trim())
+            .filter(Boolean);
+
+          if (parts.length > 0) {
+            return parts;
+          }
+        }
+      }
+
+      return [];
+    };
+
+    const channelIds = parseChannelIds(rawChannelIds);
 
     if (!Array.isArray(channelIds) || channelIds.length === 0) {
       return res.status(400).json({ error: 'Selecione pelo menos um canal.' });
@@ -393,8 +429,77 @@ function createAdminRouter({ db = defaultDb, passwords = passwordUtils } = {}) {
 
     const text = typeof message === 'string' ? message.trim() : '';
 
-    if (!text) {
-      return res.status(400).json({ error: 'Informe a mensagem que deseja enviar.' });
+    const sanitizeBoolean = (value) => {
+      if (typeof value === 'boolean') {
+        return value;
+      }
+
+      if (typeof value === 'string') {
+        return value === 'true' || value === '1';
+      }
+
+      if (typeof value === 'number') {
+        return value !== 0;
+      }
+
+      return false;
+    };
+
+    let mediaPayload = null;
+
+    if (media && typeof media === 'object') {
+      const { data, type, name, size } = media;
+
+      if (!data || typeof data !== 'string') {
+        return res.status(400).json({ error: 'Arquivo de imagem inválido.' });
+      }
+
+      const cleanedData = (data.includes(',') ? data.split(',').pop() : data).trim();
+
+      if (!cleanedData) {
+        return res.status(400).json({ error: 'Não foi possível processar a imagem enviada.' });
+      }
+
+      const normalizedData = cleanedData.replace(/\s+/g, '');
+
+      let buffer;
+
+      try {
+        buffer = Buffer.from(normalizedData, 'base64');
+      } catch (error) {
+        return res.status(400).json({ error: 'Não foi possível processar a imagem enviada.' });
+      }
+
+      if (!buffer || buffer.length === 0) {
+        return res.status(400).json({ error: 'Arquivo de imagem vazio.' });
+      }
+
+      if (buffer.length > MAX_BROADCAST_MEDIA_SIZE) {
+        return res.status(413).json({ error: 'A imagem deve ter no máximo 7MB.' });
+      }
+
+      if (type && !ALLOWED_IMAGE_MIME_TYPES.has(type)) {
+        return res.status(415).json({ error: 'Formato de imagem não suportado. Use JPG, PNG, GIF ou WEBP.' });
+      }
+
+      const numericSize =
+        typeof size === 'number'
+          ? size
+          : (typeof size === 'string' && size.trim() ? Number(size) : null);
+
+      if (typeof numericSize === 'number' && !Number.isNaN(numericSize) && numericSize > MAX_BROADCAST_MEDIA_SIZE) {
+        return res.status(413).json({ error: 'A imagem selecionada ultrapassa o limite permitido.' });
+      }
+
+      mediaPayload = {
+        buffer,
+        name: typeof name === 'string' && name ? name : 'broadcast-image',
+        type: typeof type === 'string' && type ? type : undefined
+      };
+    }
+
+    if (!text && !mediaPayload) {
+      return res.status(400).json({ error: 'Informe a mensagem que deseja enviar ou selecione uma imagem.' });
     }
 
     const numericIds = channelIds.map((id) => Number(id));
@@ -402,6 +507,8 @@ function createAdminRouter({ db = defaultDb, passwords = passwordUtils } = {}) {
     if (numericIds.some((id) => Number.isNaN(id))) {
       return res.status(400).json({ error: 'Lista de canais inválida.' });
     }
+
+    const disableNotificationFlag = sanitizeBoolean(disableNotification);
 
     const allowedParseModes = ['Markdown', 'MarkdownV2', 'HTML'];
     let selectedParseMode = null;
@@ -460,13 +567,54 @@ function createAdminRouter({ db = defaultDb, passwords = passwordUtils } = {}) {
         const channel = targets[index];
 
         try {
-          const options = { disable_notification: Boolean(disableNotification) };
+          if (mediaPayload) {
+            const captionTooLong = Boolean(text) && text.length > 1024;
+            const photoOptions = { disable_notification: disableNotificationFlag };
 
-          if (selectedParseMode) {
-            options.parse_mode = selectedParseMode;
+            if (text && !captionTooLong) {
+              photoOptions.caption = text;
+
+              if (selectedParseMode) {
+                photoOptions.parse_mode = selectedParseMode;
+              }
+            }
+
+            const fileOptions = {};
+
+            if (mediaPayload.name) {
+              fileOptions.filename = mediaPayload.name;
+            }
+
+            if (mediaPayload.type) {
+              fileOptions.contentType = mediaPayload.type;
+            }
+
+            const sendPhotoArgs = [channel.chat_id, mediaPayload.buffer, photoOptions];
+
+            if (Object.keys(fileOptions).length > 0) {
+              sendPhotoArgs.push(fileOptions);
+            }
+
+            await bot.sendPhoto(...sendPhotoArgs);
+
+            if (text && captionTooLong) {
+              const messageOptions = { disable_notification: disableNotificationFlag };
+
+              if (selectedParseMode) {
+                messageOptions.parse_mode = selectedParseMode;
+              }
+
+              await bot.sendMessage(channel.chat_id, text, messageOptions);
+            }
+          } else if (text) {
+            const options = { disable_notification: disableNotificationFlag };
+
+            if (selectedParseMode) {
+              options.parse_mode = selectedParseMode;
+            }
+
+            await bot.sendMessage(channel.chat_id, text, options);
           }
-
-          await bot.sendMessage(channel.chat_id, text, options);
 
           sent.push({
             id: channel.id,

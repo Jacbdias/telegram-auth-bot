@@ -2,6 +2,8 @@
 const API_URL = 'https://telegram-auth-bot-production.up.railway.app/api/admin';
 let authToken = localStorage.getItem('adminToken') || '';
 let channelsCache = [];
+const MAX_BROADCAST_MEDIA_SIZE = 7 * 1024 * 1024; // 7MB
+const BROADCAST_ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
 
 // Verifica se já está logado
 if (authToken) {
@@ -115,6 +117,29 @@ function escapeHtml(value) {
         .replace(/>/g, '&gt;')
         .replace(/"/g, '&quot;')
         .replace(/'/g, '&#39;');
+}
+
+function readFileAsBase64(file) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+
+        reader.onload = () => {
+            const result = reader.result;
+
+            if (typeof result === 'string') {
+                const base64 = result.includes(',') ? result.split(',').pop() : result;
+                resolve(base64);
+            } else {
+                reject(new Error('Não foi possível ler o arquivo selecionado.'));
+            }
+        };
+
+        reader.onerror = () => {
+            reject(new Error('Não foi possível ler o arquivo selecionado.'));
+        };
+
+        reader.readAsDataURL(file);
+    });
 }
 
 // ============== TABS ==============
@@ -462,20 +487,42 @@ if (broadcastForm) {
         const messageInput = document.getElementById('broadcastMessage');
         const parseModeSelect = document.getElementById('broadcastParseMode');
         const disableNotificationInput = document.getElementById('broadcastDisableNotification');
+        const mediaInput = document.getElementById('broadcastMedia');
 
         const selectedChannels = Array.from(
             document.querySelectorAll('#broadcastChannelList input[name="broadcastChannel"]:checked')
         ).map((input) => Number(input.value));
 
         const message = messageInput.value.trim();
+        const file = mediaInput && mediaInput.files ? mediaInput.files[0] : null;
+
+        if (file && file.size > MAX_BROADCAST_MEDIA_SIZE) {
+            showAlert(
+                'broadcastAlert',
+                'A imagem selecionada ultrapassa o limite de 7 MB.',
+                'error',
+                5000
+            );
+            return;
+        }
+
+        if (file && file.type && !BROADCAST_ALLOWED_IMAGE_TYPES.includes(file.type)) {
+            showAlert(
+                'broadcastAlert',
+                'Formato de imagem não suportado. Utilize JPG, PNG, GIF ou WEBP.',
+                'error',
+                5000
+            );
+            return;
+        }
 
         if (selectedChannels.length === 0) {
             showAlert('broadcastAlert', 'Selecione ao menos um canal ativo.', 'error', 4000);
             return;
         }
 
-        if (!message) {
-            showAlert('broadcastAlert', 'Escreva a mensagem que deseja enviar.', 'error', 4000);
+        if (!message && !file) {
+            showAlert('broadcastAlert', 'Escreva a mensagem ou selecione uma imagem para enviar.', 'error', 4000);
             return;
         }
 
@@ -492,6 +539,17 @@ if (broadcastForm) {
         }
 
         try {
+            if (file) {
+                const base64Data = await readFileAsBase64(file);
+
+                payload.media = {
+                    name: file.name,
+                    type: file.type,
+                    size: file.size,
+                    data: base64Data
+                };
+            }
+
             if (submitBtn) {
                 submitBtn.disabled = true;
             }
@@ -540,6 +598,9 @@ if (broadcastForm) {
             }
 
             updateBroadcastSelectedCount();
+            if (mediaInput) {
+                mediaInput.value = '';
+            }
         } catch (error) {
             const messageError = error.message || 'Não foi possível enviar a mensagem.';
             showAlert('broadcastAlert', messageError, 'error', 5000);
