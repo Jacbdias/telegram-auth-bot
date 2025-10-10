@@ -46,6 +46,13 @@ document.getElementById('loginForm').addEventListener('submit', async (e) => {
     }
 });
 
+const subscriberSearchInput = document.getElementById('subscriberSearch');
+if (subscriberSearchInput) {
+    subscriberSearchInput.addEventListener('input', (event) => {
+        renderSubscribersTable(event.target.value);
+    });
+}
+
 function logout() {
     localStorage.removeItem('adminToken');
     authToken = '';
@@ -173,30 +180,66 @@ async function loadStats() {
 
 async function loadSubscribers() {
     try {
-        const subscribers = await apiRequest('/subscribers');
-        
-        let html = `
-            <table>
-                <thead>
-                    <tr>
-                        <th>Nome</th>
-                        <th>Email</th>
-                        <th>Telefone</th>
-                        <th>Plano</th>
-                        <th>Status</th>
-                        <th>Telegram</th>
-                        <th>Ações</th>
-                    </tr>
-                </thead>
-                <tbody>
+        subscribersData = await apiRequest('/subscribers');
+        const searchValue = subscriberSearchInput ? subscriberSearchInput.value : '';
+        renderSubscribersTable(searchValue);
+    } catch (error) {
+        console.error('Erro ao carregar assinantes:', error);
+    }
+}
+
+function renderSubscribersTable(filter = '') {
+    const tableContainer = document.getElementById('subscribersTable');
+    if (!tableContainer) {
+        return;
+    }
+
+    const normalizedFilter = filter.trim().toLowerCase();
+    const filteredSubscribers = normalizedFilter
+        ? subscribersData.filter((subscriber) => {
+            const valuesToSearch = [
+                subscriber.name,
+                subscriber.email,
+                subscriber.phone,
+                subscriber.plan,
+                subscriber.status
+            ];
+
+            return valuesToSearch.some((value) =>
+                value && String(value).toLowerCase().includes(normalizedFilter)
+            );
+        })
+        : subscribersData;
+
+    let html = `
+        <table>
+            <thead>
+                <tr>
+                    <th>Nome</th>
+                    <th>Email</th>
+                    <th>Telefone</th>
+                    <th>Plano</th>
+                    <th>Status</th>
+                    <th>Telegram</th>
+                    <th>Ações</th>
+                </tr>
+            </thead>
+            <tbody>
+    `;
+
+    if (filteredSubscribers.length === 0) {
+        html += `
+            <tr>
+                <td colspan="7" class="empty-state">Nenhum assinante encontrado.</td>
+            </tr>
         `;
-        
-        subscribers.forEach(sub => {
+    } else {
+        filteredSubscribers.forEach(sub => {
             const statusBadge = sub.status === 'active' ? 'badge-success' : 'badge-danger';
             const statusText = sub.status === 'active' ? 'Ativo' : 'Inativo';
             const hasAuth = sub.authorized ? 'badge-success' : 'badge-warning';
             const authText = sub.authorized ? 'Autorizado' : 'Pendente';
-            
+
             html += `
                 <tr>
                     <td data-label="Nome">${sub.name}</td>
@@ -212,12 +255,10 @@ async function loadSubscribers() {
                 </tr>
             `;
         });
-        
-        html += '</tbody></table>';
-        document.getElementById('subscribersTable').innerHTML = html;
-    } catch (error) {
-        console.error('Erro ao carregar assinantes:', error);
     }
+
+    html += '</tbody></table>';
+    tableContainer.innerHTML = html;
 }
 
 function openAddSubscriberModal() {
