@@ -427,7 +427,8 @@ function createAdminRouter({ db = defaultDb, passwords = passwordUtils } = {}) {
       return res.status(400).json({ error: 'Selecione pelo menos um canal.' });
     }
 
-    const text = typeof message === 'string' ? message.trim() : '';
+    let text = typeof message === 'string' ? message.trim() : '';
+    const originalText = text;
 
     const sanitizeBoolean = (value) => {
       if (typeof value === 'boolean') {
@@ -569,6 +570,14 @@ function createAdminRouter({ db = defaultDb, passwords = passwordUtils } = {}) {
       return clone;
     };
 
+    const normalizeBoldForTelegramMarkdown = (value) => {
+      if (!value || typeof value !== 'string') {
+        return value;
+      }
+
+      return value.replace(/(?<!\\)\*\*([^*\n]+?)(?<!\\)\*\*/g, '*$1*');
+    };
+
     try {
       const channels = await db.getAllChannels();
       const channelMap = new Map(channels.map((channel) => [Number(channel.id), channel]));
@@ -604,6 +613,13 @@ function createAdminRouter({ db = defaultDb, passwords = passwordUtils } = {}) {
       const bot = new TelegramBot(token, { polling: false });
 
       const sent = [];
+
+      const markdownSelected =
+        selectedParseMode === 'Markdown' || selectedParseMode === 'MarkdownV2';
+
+      if (markdownSelected && text) {
+        text = normalizeBoldForTelegramMarkdown(text);
+      }
 
       for (let index = 0; index < targets.length; index += 1) {
         const channel = targets[index];
@@ -643,6 +659,10 @@ function createAdminRouter({ db = defaultDb, passwords = passwordUtils } = {}) {
               if (markdownV2Selected && isMarkdownV2ParseError(photoError)) {
                 const fallbackOptions = withoutParseMode(photoOptions);
 
+                if (markdownSelected && originalText && !captionTooLong) {
+                  fallbackOptions.caption = originalText;
+                }
+
                 if (Object.keys(fileOptions).length > 0) {
                   await bot.sendPhoto(channel.chat_id, mediaPayload.buffer, fallbackOptions, fileOptions);
                 } else {
@@ -667,7 +687,11 @@ function createAdminRouter({ db = defaultDb, passwords = passwordUtils } = {}) {
               } catch (messageError) {
                 if (markdownV2Selected && isMarkdownV2ParseError(messageError)) {
                   const fallbackMessageOptions = withoutParseMode(messageOptions);
-                  await bot.sendMessage(channel.chat_id, text, fallbackMessageOptions);
+                  await bot.sendMessage(
+                    channel.chat_id,
+                    markdownSelected && originalText ? originalText : text,
+                    fallbackMessageOptions
+                  );
                   channelWarnings.push('A mensagem complementar foi enviada sem formatação Markdown V2 por conter caracteres não escapados.');
                 } else {
                   throw messageError;
@@ -686,7 +710,11 @@ function createAdminRouter({ db = defaultDb, passwords = passwordUtils } = {}) {
             } catch (messageError) {
               if (markdownV2Selected && isMarkdownV2ParseError(messageError)) {
                 const fallbackOptions = withoutParseMode(options);
-                await bot.sendMessage(channel.chat_id, text, fallbackOptions);
+                await bot.sendMessage(
+                  channel.chat_id,
+                  markdownSelected && originalText ? originalText : text,
+                  fallbackOptions
+                );
                 channelWarnings.push('Mensagem enviada sem formatação Markdown V2 por conter caracteres não escapados.');
               } else {
                 throw messageError;
