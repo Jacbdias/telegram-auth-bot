@@ -383,6 +383,129 @@ function createAdminRouter({ db = defaultDb, passwords = passwordUtils } = {}) {
     }
   });
 
+  // Enviar mensagem para canais do Telegram
+  router.post('/broadcast', adminAuth, async (req, res) => {
+    const { channelIds, message, parseMode, disableNotification } = req.body;
+
+    if (!Array.isArray(channelIds) || channelIds.length === 0) {
+      return res.status(400).json({ error: 'Selecione pelo menos um canal.' });
+    }
+
+    const text = typeof message === 'string' ? message.trim() : '';
+
+    if (!text) {
+      return res.status(400).json({ error: 'Informe a mensagem que deseja enviar.' });
+    }
+
+    const numericIds = channelIds.map((id) => Number(id));
+
+    if (numericIds.some((id) => Number.isNaN(id))) {
+      return res.status(400).json({ error: 'Lista de canais inválida.' });
+    }
+
+    const allowedParseModes = ['Markdown', 'MarkdownV2', 'HTML'];
+    let selectedParseMode = null;
+
+    if (parseMode) {
+      if (!allowedParseModes.includes(parseMode)) {
+        return res.status(400).json({ error: 'Formato de mensagem inválido.' });
+      }
+
+      selectedParseMode = parseMode;
+    }
+
+    const token = process.env.TELEGRAM_BOT_TOKEN;
+
+    if (!token) {
+      return res.status(500).json({ error: 'Token do bot não configurado.' });
+    }
+
+    try {
+      const channels = await db.getAllChannels();
+      const channelMap = new Map(channels.map((channel) => [Number(channel.id), channel]));
+      const failed = [];
+      const targets = [];
+
+      numericIds.forEach((id) => {
+        const channel = channelMap.get(id);
+
+        if (!channel) {
+          failed.push({ id, reason: 'Canal não encontrado' });
+          return;
+        }
+
+        if (!channel.active) {
+          failed.push({
+            id: channel.id,
+            name: channel.name,
+            chat_id: channel.chat_id,
+            reason: 'Canal inativo'
+          });
+          return;
+        }
+
+        targets.push(channel);
+      });
+
+      if (targets.length === 0) {
+        return res.status(400).json({ error: 'Nenhum canal ativo disponível para envio.' });
+      }
+
+      const TelegramBot = require('node-telegram-bot-api');
+      const bot = new TelegramBot(token, { polling: false });
+
+      const sent = [];
+
+      for (let index = 0; index < targets.length; index += 1) {
+        const channel = targets[index];
+
+        try {
+          const options = { disable_notification: Boolean(disableNotification) };
+
+          if (selectedParseMode) {
+            options.parse_mode = selectedParseMode;
+          }
+
+          await bot.sendMessage(channel.chat_id, text, options);
+
+          sent.push({
+            id: channel.id,
+            name: channel.name,
+            chat_id: channel.chat_id
+          });
+        } catch (error) {
+          failed.push({
+            id: channel.id,
+            name: channel.name,
+            chat_id: channel.chat_id,
+            reason: error.message
+          });
+        }
+
+        if (index < targets.length - 1) {
+          await new Promise((resolve) => setTimeout(resolve, 400));
+        }
+      }
+
+      if (typeof bot.close === 'function') {
+        try {
+          await bot.close();
+        } catch (closeError) {
+          console.warn('Não foi possível encerrar instância auxiliar do bot:', closeError.message);
+        }
+      }
+
+      res.json({
+        success: failed.length === 0,
+        sent,
+        failed
+      });
+    } catch (error) {
+      console.error('Erro ao enviar mensagem para canais:', error);
+      res.status(500).json({ error: 'Erro ao enviar mensagem para os canais.' });
+    }
+  });
+
   // ============== LOGS ==============
 
   // Listar logs de autorização
