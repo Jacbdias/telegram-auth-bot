@@ -314,12 +314,53 @@ body {
   flex-wrap: wrap;
 }
 
+.card-actions .search-box {
+  position: relative;
+  flex: 1 1 260px;
+  min-width: 200px;
+}
+
+.card-actions .search-box input {
+  width: 100%;
+  padding: 12px 14px 12px 40px;
+  border: 1px solid #cbd5f5;
+  border-radius: 10px;
+  background: #f8fafc;
+  color: #0f172a;
+  font-size: 14px;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.card-actions .search-box input:focus {
+  outline: none;
+  border-color: #6366f1;
+  box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.15);
+  background: #ffffff;
+}
+
+.card-actions .search-box .search-icon {
+  position: absolute;
+  top: 50%;
+  left: 14px;
+  transform: translateY(-50%);
+  font-size: 16px;
+  color: #64748b;
+  pointer-events: none;
+}
+
 .card-actions .btn {
   flex: 1 1 auto;
 }
 
 .card-actions .btn-small {
   flex: 0 0 auto;
+}
+
+.table-container .empty-state {
+  text-align: center;
+  padding: 24px 0;
+  font-size: 14px;
+  color: #64748b;
 }
 
 .card h2 > div {
