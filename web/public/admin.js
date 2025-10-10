@@ -1,6 +1,9 @@
 // Configuração
 const API_URL = 'https://telegram-auth-bot-production.up.railway.app/api/admin';
 let authToken = localStorage.getItem('adminToken') || '';
+let channelsCache = [];
+const MAX_BROADCAST_MEDIA_SIZE = 7 * 1024 * 1024; // 7MB
+const BROADCAST_ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
 
 // Verifica se já está logado
 if (authToken) {
@@ -107,6 +110,29 @@ function escapeHtml(value) {
         .replace(/>/g, '&gt;')
         .replace(/"/g, '&quot;')
         .replace(/'/g, '&#39;');
+}
+
+function readFileAsBase64(file) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+
+        reader.onload = () => {
+            const result = reader.result;
+
+            if (typeof result === 'string') {
+                const base64 = result.includes(',') ? result.split(',').pop() : result;
+                resolve(base64);
+            } else {
+                reject(new Error('Não foi possível ler o arquivo selecionado.'));
+            }
+        };
+
+        reader.onerror = () => {
+            reject(new Error('Não foi possível ler o arquivo selecionado.'));
+        };
+
+        reader.readAsDataURL(file);
+    });
 }
 
 // ============== TABS ==============
@@ -272,7 +298,10 @@ async function deleteSubscriber(id, name) {
 async function loadChannels() {
     try {
         const channels = await apiRequest('/channels');
-        
+        channelsCache = channels;
+
+        renderBroadcastChannelList(channels);
+
         let html = `
             <table>
                 <thead>
@@ -314,6 +343,250 @@ async function loadChannels() {
     }
 }
 
+function renderBroadcastChannelList(channels) {
+    const container = document.getElementById('broadcastChannelList');
+    const submitBtn = document.getElementById('broadcastSubmit');
+
+    if (!container) {
+        return;
+    }
+
+    if (!channels || channels.length === 0) {
+        container.innerHTML = '<p class="empty-message">Nenhum canal cadastrado.</p>';
+
+        if (submitBtn) {
+            submitBtn.disabled = true;
+        }
+
+        updateBroadcastSelectedCount();
+        return;
+    }
+
+    let html = '';
+
+    channels.forEach((channel) => {
+        const isActive = Boolean(channel.active);
+        const badgeClass = isActive ? 'badge-success' : 'badge-danger';
+        const statusLabel = isActive ? 'Ativo' : 'Inativo';
+
+        html += `
+            <label class="checkbox-item ${isActive ? '' : 'disabled'}">
+                <input type="checkbox" name="broadcastChannel" value="${channel.id}" ${isActive ? '' : 'disabled'}>
+                <div class="checkbox-details">
+                    <div class="checkbox-title">${escapeHtml(channel.name)}</div>
+                    <div class="checkbox-subtitle">
+                        <span class="badge ${badgeClass}">${statusLabel}</span>
+                        <span>${escapeHtml(channel.plan || 'Sem plano')}</span>
+                    </div>
+                    <div class="checkbox-meta"><code>${escapeHtml(channel.chat_id)}</code></div>
+                </div>
+            </label>
+        `;
+    });
+
+    container.innerHTML = html;
+
+    container.querySelectorAll('input[name="broadcastChannel"]').forEach((input) => {
+        input.addEventListener('change', updateBroadcastSelectedCount);
+    });
+
+    if (submitBtn) {
+        const activeChannels = channels.filter((channel) => channel.active);
+        submitBtn.disabled = activeChannels.length === 0;
+    }
+
+    updateBroadcastSelectedCount();
+}
+
+function updateBroadcastSelectedCount() {
+    const container = document.getElementById('broadcastChannelList');
+    const label = document.getElementById('broadcastSelectedCount');
+
+    if (!container || !label) {
+        return;
+    }
+
+    const enabled = container.querySelectorAll('input[name="broadcastChannel"]:not(:disabled)');
+    const selected = container.querySelectorAll('input[name="broadcastChannel"]:checked');
+
+    if (enabled.length === 0) {
+        label.textContent = 'Nenhum canal ativo disponível';
+        return;
+    }
+
+    label.textContent = `${selected.length} de ${enabled.length} canal(is) selecionado(s)`;
+}
+
+function selectAllBroadcastChannels() {
+    document
+        .querySelectorAll('#broadcastChannelList input[name="broadcastChannel"]:not(:disabled)')
+        .forEach((input) => {
+            input.checked = true;
+        });
+
+    updateBroadcastSelectedCount();
+}
+
+function clearBroadcastSelection() {
+    document
+        .querySelectorAll('#broadcastChannelList input[name="broadcastChannel"]:not(:disabled)')
+        .forEach((input) => {
+            input.checked = false;
+        });
+
+    updateBroadcastSelectedCount();
+}
+
+const broadcastForm = document.getElementById('broadcastForm');
+if (broadcastForm) {
+    broadcastForm.addEventListener('submit', async (event) => {
+        event.preventDefault();
+
+        const submitBtn = document.getElementById('broadcastSubmit');
+        const messageInput = document.getElementById('broadcastMessage');
+        const parseModeSelect = document.getElementById('broadcastParseMode');
+        const disableNotificationInput = document.getElementById('broadcastDisableNotification');
+        const mediaInput = document.getElementById('broadcastMedia');
+
+        const selectedChannels = Array.from(
+            document.querySelectorAll('#broadcastChannelList input[name="broadcastChannel"]:checked')
+        ).map((input) => Number(input.value));
+
+        const message = messageInput.value.trim();
+        const file = mediaInput && mediaInput.files ? mediaInput.files[0] : null;
+
+        if (file && file.size > MAX_BROADCAST_MEDIA_SIZE) {
+            showAlert(
+                'broadcastAlert',
+                'A imagem selecionada ultrapassa o limite de 7 MB.',
+                'error',
+                5000
+            );
+            return;
+        }
+
+        if (file && file.type && !BROADCAST_ALLOWED_IMAGE_TYPES.includes(file.type)) {
+            showAlert(
+                'broadcastAlert',
+                'Formato de imagem não suportado. Utilize JPG, PNG, GIF ou WEBP.',
+                'error',
+                5000
+            );
+            return;
+        }
+
+        if (selectedChannels.length === 0) {
+            showAlert('broadcastAlert', 'Selecione ao menos um canal ativo.', 'error', 4000);
+            return;
+        }
+
+        if (!message && !file) {
+            showAlert('broadcastAlert', 'Escreva a mensagem ou selecione uma imagem para enviar.', 'error', 4000);
+            return;
+        }
+
+        const payload = {
+            channelIds: selectedChannels,
+            message,
+            disableNotification: disableNotificationInput.checked
+        };
+
+        const parseMode = parseModeSelect.value;
+
+        if (parseMode) {
+            payload.parseMode = parseMode;
+        }
+
+        try {
+            if (file) {
+                const base64Data = await readFileAsBase64(file);
+
+                payload.media = {
+                    name: file.name,
+                    type: file.type,
+                    size: file.size,
+                    data: base64Data
+                };
+            }
+
+            if (submitBtn) {
+                submitBtn.disabled = true;
+            }
+
+            showAlert('broadcastAlert', 'Enviando mensagem...', 'info', null);
+
+            const result = await apiRequest('/broadcast', 'POST', payload);
+            const sent = result.sent || [];
+            const failed = result.failed || [];
+
+            let summary = '';
+
+            if (sent.length > 0) {
+                const sentNames = sent
+                    .map((item) => item && item.name)
+                    .filter(Boolean)
+                    .join(', ');
+
+                summary += sentNames
+                    ? `Mensagem enviada para ${sent.length} canal(is): ${sentNames}.`
+                    : `Mensagem enviada para ${sent.length} canal(is).`;
+            }
+
+            if (failed.length > 0) {
+                const failedNames = failed
+                    .map((item) => (item && (item.name || (item.id ? `ID ${item.id}` : null))))
+                    .filter(Boolean)
+                    .join(', ');
+
+                summary += `${summary ? ' ' : ''}Falha ao enviar para ${failed.length} canal(is)`;
+
+                if (failedNames) {
+                    summary += `: ${failedNames}.`;
+                } else {
+                    summary += '.';
+                }
+            }
+
+            const alertType = failed.length > 0 ? 'error' : 'success';
+            const duration = failed.length > 0 ? 7000 : 5000;
+
+            showAlert('broadcastAlert', summary || 'Envio concluído.', alertType, duration);
+
+            if (failed.length === 0) {
+                broadcastForm.reset();
+            }
+
+            updateBroadcastSelectedCount();
+            if (mediaInput) {
+                mediaInput.value = '';
+            }
+        } catch (error) {
+            const messageError = error.message || 'Não foi possível enviar a mensagem.';
+            showAlert('broadcastAlert', messageError, 'error', 5000);
+        } finally {
+            if (submitBtn) {
+                submitBtn.disabled = false;
+            }
+        }
+    });
+}
+
+const selectAllButton = document.getElementById('broadcastSelectAll');
+if (selectAllButton) {
+    selectAllButton.addEventListener('click', (event) => {
+        event.preventDefault();
+        selectAllBroadcastChannels();
+    });
+}
+
+const clearButton = document.getElementById('broadcastClear');
+if (clearButton) {
+    clearButton.addEventListener('click', (event) => {
+        event.preventDefault();
+        clearBroadcastSelection();
+    });
+}
+
 function openAddChannelModal() {
     document.getElementById('channelModalTitle').textContent = 'Novo Canal';
     document.getElementById('channelForm').reset();
@@ -325,9 +598,15 @@ function openAddChannelModal() {
 
 async function editChannel(id) {
     try {
-        const channels = await apiRequest('/channels');
-        const channel = channels.find(c => c.id === id);
-        
+        let channel = channelsCache.find(c => c.id === id);
+
+        if (!channel) {
+            const channels = await apiRequest('/channels');
+            channelsCache = channels;
+            channel = channels.find(c => c.id === id);
+            renderBroadcastChannelList(channels);
+        }
+
         document.getElementById('channelModalTitle').textContent = 'Editar Canal';
         document.getElementById('channelId').value = channel.id;
         document.getElementById('channelName').value = channel.name;
@@ -591,10 +870,22 @@ async function deleteAdmin(id, username) {
 // ============== UTILS ==============
 
 function showAlert(elementId, message, type) {
+    showAlert(elementId, message, type, 3000);
+}
+
+function showAlert(elementId, message, type, duration = 3000) {
     const alert = document.getElementById(elementId);
+
+    if (!alert) {
+        return;
+    }
+
     alert.textContent = message;
     alert.className = `alert alert-${type} show`;
-    setTimeout(() => alert.classList.remove('show'), 3000);
+
+    if (duration !== null) {
+        setTimeout(() => alert.classList.remove('show'), duration);
+    }
 }
 
 // ============== IMPORTAÇÃO EM MASSA ==============
