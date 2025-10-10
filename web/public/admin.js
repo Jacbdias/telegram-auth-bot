@@ -96,6 +96,19 @@ async function apiRequest(endpoint, method = 'GET', body = null) {
     return data;
 }
 
+function escapeHtml(value) {
+    if (value === null || value === undefined) {
+        return '';
+    }
+
+    return String(value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
 // ============== TABS ==============
 
 function showTab(tabName, trigger = null) {
@@ -473,15 +486,17 @@ async function loadAdminUsers() {
         admins.forEach(admin => {
             const created = admin.created_at ? new Date(admin.created_at).toLocaleString('pt-BR') : '-';
             const lastLogin = admin.last_login ? new Date(admin.last_login).toLocaleString('pt-BR') : '-';
+            const safeUsername = escapeHtml(admin.username || '');
+            const encodedUsername = encodeURIComponent(admin.username || '');
 
             html += `
                 <tr>
-                    <td>${admin.username}</td>
+                    <td>${safeUsername}</td>
                     <td>${created}</td>
                     <td>${lastLogin}</td>
                     <td class="actions">
-                        <button class="btn-small btn-edit" onclick="openEditAdminModal(${admin.id}, ${JSON.stringify(admin.username)})">Atualizar senha</button>
-                        <button class="btn-small btn-delete" onclick="deleteAdmin(${admin.id}, ${JSON.stringify(admin.username)})">Remover</button>
+                        <button class="btn-small btn-edit" data-action="edit-admin" data-id="${admin.id}" data-username="${encodedUsername}">Atualizar senha</button>
+                        <button class="btn-small btn-delete" data-action="delete-admin" data-id="${admin.id}" data-username="${encodedUsername}">Remover</button>
                     </td>
                 </tr>
             `;
@@ -493,6 +508,27 @@ async function loadAdminUsers() {
         console.error('Erro ao carregar administradores:', error);
         showAlert('adminsAlert', 'Não foi possível carregar os administradores.', 'error');
     }
+}
+
+const adminsTableContainer = document.getElementById('adminsTable');
+if (adminsTableContainer) {
+    adminsTableContainer.addEventListener('click', (event) => {
+        const button = event.target.closest('button[data-action]');
+
+        if (!button) {
+            return;
+        }
+
+        const action = button.dataset.action;
+        const id = button.dataset.id;
+        const username = decodeURIComponent(button.dataset.username || '');
+
+        if (action === 'edit-admin') {
+            openEditAdminModal(id, username);
+        } else if (action === 'delete-admin') {
+            deleteAdmin(id, username);
+        }
+    });
 }
 
 function openAddAdminModal() {
