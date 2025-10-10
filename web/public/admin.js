@@ -126,30 +126,6 @@ function showTab(tabName, trigger = null) {
     }
 }
 
-function navigateDashboard(element) {
-    if (!element) return;
-
-    const action = element.getAttribute('data-action');
-    const tabName = element.getAttribute('data-tab');
-
-    if (action === 'sync') {
-        const syncButton = document.getElementById('syncBtn');
-        if (syncButton) {
-            syncButton.focus();
-            syncButton.click();
-        }
-        return;
-    }
-
-    if (tabName) {
-        const tabButton = document.querySelector(`.tab[data-tab="${tabName}"]`);
-        showTab(tabName, tabButton);
-        if (tabButton) {
-            tabButton.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        }
-    }
-}
-
 // ============== STATS ==============
 
 async function loadStats() {
@@ -197,13 +173,13 @@ async function loadSubscribers() {
             
             html += `
                 <tr>
-                    <td>${sub.name}</td>
-                    <td>${sub.email}</td>
-                    <td>${sub.phone}</td>
-                    <td>${sub.plan}</td>
-                    <td><span class="badge ${statusBadge}">${statusText}</span></td>
-                    <td><span class="badge ${hasAuth}">${authText}</span></td>
-                    <td class="actions">
+                    <td data-label="Nome">${sub.name}</td>
+                    <td data-label="Email">${sub.email}</td>
+                    <td data-label="Telefone">${sub.phone}</td>
+                    <td data-label="Plano">${sub.plan}</td>
+                    <td data-label="Status"><span class="badge ${statusBadge}">${statusText}</span></td>
+                    <td data-label="Telegram"><span class="badge ${hasAuth}">${authText}</span></td>
+                    <td class="actions" data-label="Ações">
                         <button class="btn-small btn-edit" onclick="editSubscriber(${sub.id})">Editar</button>
                         <button class="btn-small btn-delete" onclick="deleteSubscriber(${sub.id}, '${sub.name}')">Remover</button>
                     </td>
@@ -318,12 +294,12 @@ async function loadChannels() {
             
             html += `
                 <tr>
-                    <td>${channel.name}</td>
-                    <td><code>${channel.chat_id}</code></td>
-                    <td>${channel.plan}</td>
-                    <td>${channel.order_index}</td>
-                    <td><span class="badge ${statusBadge}">${statusText}</span></td>
-                    <td class="actions">
+                    <td data-label="Nome">${channel.name}</td>
+                    <td data-label="Chat ID"><code>${channel.chat_id}</code></td>
+                    <td data-label="Plano">${channel.plan}</td>
+                    <td data-label="Ordem">${channel.order_index}</td>
+                    <td data-label="Status"><span class="badge ${statusBadge}">${statusText}</span></td>
+                    <td class="actions" data-label="Ações">
                         <button class="btn-small btn-edit" onclick="editChannel(${channel.id})">Editar</button>
                         <button class="btn-small btn-delete" onclick="deleteChannel(${channel.id}, '${channel.name}')">Remover</button>
                     </td>
@@ -443,11 +419,11 @@ async function loadLogs() {
 
             html += `
                 <tr>
-                    <td>${dateStr}</td>
-                    <td><span class="badge ${actionBadge}">${actionText}</span></td>
-                    <td>${log.name || '-'}</td>
-                    <td>${log.email || '-'}</td>
-                    <td><code>${log.telegram_id}</code></td>
+                    <td data-label="Data/Hora">${dateStr}</td>
+                    <td data-label="Ação"><span class="badge ${actionBadge}">${actionText}</span></td>
+                    <td data-label="Nome">${log.name || '-'}</td>
+                    <td data-label="Email">${log.email || '-'}</td>
+                    <td data-label="Telegram ID"><code>${log.telegram_id}</code></td>
                 </tr>
             `;
         });
@@ -491,10 +467,10 @@ async function loadAdminUsers() {
 
             html += `
                 <tr>
-                    <td>${safeUsername}</td>
-                    <td>${created}</td>
-                    <td>${lastLogin}</td>
-                    <td class="actions">
+                    <td data-label="Usuário">${safeUsername}</td>
+                    <td data-label="Criado em">${created}</td>
+                    <td data-label="Último acesso">${lastLogin}</td>
+                    <td class="actions" data-label="Ações">
                         <button class="btn-small btn-edit" data-action="edit-admin" data-id="${admin.id}" data-username="${encodedUsername}">Atualizar senha</button>
                         <button class="btn-small btn-delete" data-action="delete-admin" data-id="${admin.id}" data-username="${encodedUsername}">Remover</button>
                     </td>
