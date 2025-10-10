@@ -588,8 +588,21 @@ if (broadcastForm) {
                 }
             }
 
-            const alertType = failed.length > 0 ? 'error' : 'success';
-            const duration = failed.length > 0 ? 7000 : 5000;
+            const warnings = sent
+                .flatMap((item) => (item && Array.isArray(item.warnings) ? item.warnings : []))
+                .filter(Boolean);
+
+            if (warnings.length > 0) {
+                const warningMessage =
+                    warnings.length === 1
+                        ? warnings[0]
+                        : warnings.map((warning, index) => `${index + 1}. ${warning}`).join(' ');
+
+                summary += `${summary ? ' ' : ''}${warnings.length === 1 ? 'Aviso:' : 'Avisos:'} ${warningMessage}`;
+            }
+
+            const alertType = failed.length > 0 ? 'error' : warnings.length > 0 ? 'warning' : 'success';
+            const duration = failed.length > 0 ? 7000 : warnings.length > 0 ? 6000 : 5000;
 
             showAlert('broadcastAlert', summary || 'Envio concluído.', alertType, duration);
 

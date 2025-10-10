@@ -527,6 +527,48 @@ function createAdminRouter({ db = defaultDb, passwords = passwordUtils } = {}) {
       return res.status(500).json({ error: 'Token do bot não configurado.' });
     }
 
+    const markdownV2Selected = selectedParseMode === 'MarkdownV2';
+
+    const isMarkdownV2ParseError = (error) => {
+      if (!error || typeof error !== 'object') {
+        return false;
+      }
+
+      if (error.code !== 'ETELEGRAM') {
+        return false;
+      }
+
+      const description =
+        (error.response &&
+          error.response.body &&
+          typeof error.response.body.description === 'string' &&
+          error.response.body.description) ||
+        (typeof error.message === 'string' ? error.message : '');
+
+      const errorCode =
+        error.response &&
+        error.response.body &&
+        typeof error.response.body.error_code === 'number'
+          ? error.response.body.error_code
+          : null;
+
+      if (errorCode !== 400) {
+        return false;
+      }
+
+      return description.toLowerCase().includes('parse');
+    };
+
+    const withoutParseMode = (options) => {
+      if (!options || typeof options !== 'object') {
+        return {};
+      }
+
+      const clone = { ...options };
+      delete clone.parse_mode;
+      return clone;
+    };
+
     try {
       const channels = await db.getAllChannels();
       const channelMap = new Map(channels.map((channel) => [Number(channel.id), channel]));
@@ -567,6 +609,8 @@ function createAdminRouter({ db = defaultDb, passwords = passwordUtils } = {}) {
         const channel = targets[index];
 
         try {
+          const channelWarnings = [];
+
           if (mediaPayload) {
             const captionTooLong = Boolean(text) && text.length > 1024;
             const photoOptions = { disable_notification: disableNotificationFlag };
@@ -589,13 +633,27 @@ function createAdminRouter({ db = defaultDb, passwords = passwordUtils } = {}) {
               fileOptions.contentType = mediaPayload.type;
             }
 
-            const sendPhotoArgs = [channel.chat_id, mediaPayload.buffer, photoOptions];
+            try {
+              if (Object.keys(fileOptions).length > 0) {
+                await bot.sendPhoto(channel.chat_id, mediaPayload.buffer, photoOptions, fileOptions);
+              } else {
+                await bot.sendPhoto(channel.chat_id, mediaPayload.buffer, photoOptions);
+              }
+            } catch (photoError) {
+              if (markdownV2Selected && isMarkdownV2ParseError(photoError)) {
+                const fallbackOptions = withoutParseMode(photoOptions);
 
-            if (Object.keys(fileOptions).length > 0) {
-              sendPhotoArgs.push(fileOptions);
+                if (Object.keys(fileOptions).length > 0) {
+                  await bot.sendPhoto(channel.chat_id, mediaPayload.buffer, fallbackOptions, fileOptions);
+                } else {
+                  await bot.sendPhoto(channel.chat_id, mediaPayload.buffer, fallbackOptions);
+                }
+
+                channelWarnings.push('A legenda foi enviada sem formatação Markdown V2 por conter caracteres não escapados.');
+              } else {
+                throw photoError;
+              }
             }
-
-            await bot.sendPhoto(...sendPhotoArgs);
 
             if (text && captionTooLong) {
               const messageOptions = { disable_notification: disableNotificationFlag };
@@ -604,7 +662,17 @@ function createAdminRouter({ db = defaultDb, passwords = passwordUtils } = {}) {
                 messageOptions.parse_mode = selectedParseMode;
               }
 
-              await bot.sendMessage(channel.chat_id, text, messageOptions);
+              try {
+                await bot.sendMessage(channel.chat_id, text, messageOptions);
+              } catch (messageError) {
+                if (markdownV2Selected && isMarkdownV2ParseError(messageError)) {
+                  const fallbackMessageOptions = withoutParseMode(messageOptions);
+                  await bot.sendMessage(channel.chat_id, text, fallbackMessageOptions);
+                  channelWarnings.push('A mensagem complementar foi enviada sem formatação Markdown V2 por conter caracteres não escapados.');
+                } else {
+                  throw messageError;
+                }
+              }
             }
           } else if (text) {
             const options = { disable_notification: disableNotificationFlag };
@@ -613,14 +681,30 @@ function createAdminRouter({ db = defaultDb, passwords = passwordUtils } = {}) {
               options.parse_mode = selectedParseMode;
             }
 
-            await bot.sendMessage(channel.chat_id, text, options);
+            try {
+              await bot.sendMessage(channel.chat_id, text, options);
+            } catch (messageError) {
+              if (markdownV2Selected && isMarkdownV2ParseError(messageError)) {
+                const fallbackOptions = withoutParseMode(options);
+                await bot.sendMessage(channel.chat_id, text, fallbackOptions);
+                channelWarnings.push('Mensagem enviada sem formatação Markdown V2 por conter caracteres não escapados.');
+              } else {
+                throw messageError;
+              }
+            }
           }
 
-          sent.push({
+          const payload = {
             id: channel.id,
             name: channel.name,
             chat_id: channel.chat_id
-          });
+          };
+
+          if (channelWarnings.length > 0) {
+            payload.warnings = channelWarnings;
+          }
+
+          sent.push(payload);
         } catch (error) {
           failed.push({
             id: channel.id,
