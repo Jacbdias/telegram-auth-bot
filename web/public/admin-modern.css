@@ -394,6 +394,20 @@ body {
   gap: 16px;
 }
 
+.card-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.card-actions .btn {
+  flex: 1 1 auto;
+}
+
+.card-actions .btn-small {
+  flex: 0 0 auto;
+}
+
 .card h2 > div {
   display: flex;
   gap: 10px;
@@ -433,6 +447,15 @@ body {
 table {
   width: 100%;
   border-collapse: collapse;
+}
+
+.table-container {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.table-container table {
+  min-width: 640px;
 }
 
 thead {
@@ -588,6 +611,17 @@ tbody td {
   color: #334155;
 }
 
+.button-row {
+  display: flex;
+  gap: 12px;
+  margin-top: 20px;
+  flex-wrap: wrap;
+}
+
+.button-row .btn {
+  flex: 1 1 140px;
+}
+
 .btn-delete:hover {
   background: #c2410c;
 }
@@ -667,6 +701,66 @@ tbody td {
   overflow-y: auto;
 }
 
+.modal-info {
+  background: #f7fafc;
+  padding: 20px;
+  border-radius: 12px;
+  margin-bottom: 20px;
+}
+
+.modal-info h3 {
+  margin-bottom: 10px;
+  font-size: 18px;
+  color: #0f172a;
+}
+
+.modal-info ol {
+  margin-left: 20px;
+  line-height: 1.7;
+  color: #475569;
+}
+
+.file-input {
+  padding: 12px;
+  border: 2px dashed #cbd5e1;
+  border-radius: 12px;
+  background: #f8fafc;
+  width: 100%;
+  cursor: pointer;
+  transition: border-color 0.2s ease, background-color 0.2s ease;
+}
+
+.file-input:hover,
+.file-input:focus {
+  border-color: #1f2937;
+  background: #f1f5f9;
+  outline: none;
+}
+
+.modal-section {
+  margin: 24px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.preview-table {
+  max-height: 200px;
+  overflow-y: auto;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 12px;
+  background: #ffffff;
+}
+
+.results-content {
+  background: #f7fafc;
+  padding: 16px;
+  border-radius: 12px;
+  color: #0f172a;
+  line-height: 1.6;
+}
+
 .modal-content h2 {
   margin-bottom: 20px;
   font-size: 22px;
@@ -732,9 +826,40 @@ tbody td {
 }
 
 /* Responsivo */
+@media (max-width: 1024px) {
+  .dashboard-surface {
+    padding: 32px 0 64px;
+  }
+
+  .container {
+    padding: 16px;
+  }
+
+  .header {
+    padding: 28px;
+    gap: 20px;
+  }
+
+  .header-user {
+    gap: 16px;
+  }
+
+  .tabs {
+    gap: 12px;
+  }
+
+  .card-modern {
+    height: 240px;
+  }
+}
+
 @media (max-width: 768px) {
-  .header h1 {
-    font-size: 32px;
+  .dashboard-surface {
+    padding: 24px 0 56px;
+  }
+
+  .container {
+    padding: 12px;
   }
 
   .header {
@@ -742,9 +867,22 @@ tbody td {
     align-items: flex-start;
   }
 
+  .header h1 {
+    font-size: 32px;
+  }
+
   .header-user {
     width: 100%;
     justify-content: space-between;
+    flex-wrap: wrap;
+  }
+
+  .header-user-meta {
+    align-items: flex-start;
+  }
+
+  .header-logout {
+    width: 100%;
   }
 
   .cards-grid {
@@ -752,11 +890,16 @@ tbody td {
   }
 
   .card-modern {
-    height: 220px;
+    height: auto;
+    min-height: 200px;
   }
 
   .card-title {
     font-size: 22px;
+  }
+
+  .action-banner {
+    padding: 24px;
   }
 
   .action-banner-content {
@@ -766,5 +909,145 @@ tbody td {
 
   .action-banner-button {
     width: 100%;
+  }
+
+  .card h2 {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .card-actions {
+    width: 100%;
+  }
+
+  .card-actions .btn {
+    flex: 1 1 100%;
+  }
+
+  .button-row {
+    flex-direction: column;
+  }
+
+  .button-row .btn {
+    width: 100%;
+  }
+}
+
+@media (max-width: 640px) {
+  .tab {
+    flex: 1;
+    text-align: center;
+  }
+
+  .table-container {
+    overflow-x: visible;
+  }
+
+  .table-container table {
+    min-width: 100%;
+  }
+
+  table,
+  thead,
+  tbody,
+  th,
+  td,
+  tr {
+    display: block;
+  }
+
+  thead {
+    display: none;
+  }
+
+  tbody {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  tbody tr {
+    border: 1px solid #e2e8f0;
+    border-radius: 16px;
+    padding: 16px;
+    box-shadow: 0 8px 20px rgba(15, 23, 42, 0.06);
+    background: #ffffff;
+  }
+
+  tbody td {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 8px 0;
+    font-size: 14px;
+    color: #475569;
+  }
+
+  tbody td::before {
+    content: attr(data-label);
+    font-weight: 600;
+    color: #0f172a;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    font-size: 11px;
+    flex: 0 0 45%;
+  }
+
+  tbody td.actions,
+  .actions {
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .actions .btn-small,
+  tbody td.actions .btn-small {
+    width: 100%;
+  }
+
+  .stat-card .number {
+    font-size: 32px;
+  }
+
+  .card-content {
+    padding: 24px;
+  }
+
+  .card-description {
+    max-width: none;
+  }
+}
+
+@media (max-width: 480px) {
+  body {
+    font-size: 15px;
+  }
+
+  .header h1 {
+    font-size: 28px;
+  }
+
+  .header p {
+    font-size: 16px;
+  }
+
+  .tabs {
+    gap: 8px;
+  }
+
+  .tab {
+    padding: 10px 12px;
+    font-size: 14px;
+  }
+
+  .modal-content {
+    padding: 24px;
+  }
+
+  .modal-info {
+    padding: 16px;
+  }
+
+  .preview-table {
+    padding: 10px;
   }
 }
