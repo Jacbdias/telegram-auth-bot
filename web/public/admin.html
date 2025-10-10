@@ -465,13 +465,13 @@
                 <div class="card">
                     <h2>
                         Assinantes
-                        <div style="display: flex; gap: 10px;">
+                        <div class="card-actions">
                             <button class="btn btn-success btn-small" onclick="openAddSubscriberModal()">+ Novo Assinante</button>
                             <button class="btn btn-small" onclick="openImportModal()">📂 Importar CSV</button>
                             <button class="btn btn-small" onclick="downloadTemplate()">⬇️ Baixar Modelo</button>
                         </div>
                     </h2>
-                    <div id="subscribersTable"></div>
+                    <div id="subscribersTable" class="table-container"></div>
                 </div>
             </div>
 
@@ -482,7 +482,7 @@
                         Canais
                         <button class="btn btn-success btn-small" onclick="openAddChannelModal()">+ Novo Canal</button>
                     </h2>
-                    <div id="channelsTable"></div>
+                    <div id="channelsTable" class="table-container"></div>
                 </div>
             </div>
 
@@ -494,7 +494,7 @@
                         <button class="btn btn-success btn-small" onclick="openAddAdminModal()">+ Novo Administrador</button>
                     </h2>
                     <div id="adminsAlert" class="alert"></div>
-                    <div id="adminsTable"></div>
+                    <div id="adminsTable" class="table-container"></div>
                 </div>
             </div>
 
@@ -502,7 +502,7 @@
             <div id="logsTab" class="tab-content">
                 <div class="card">
                     <h2>Histórico de Autorizações</h2>
-                    <div id="logsTable"></div>
+                    <div id="logsTable" class="table-container"></div>
                 </div>
             </div>
         </div>
@@ -546,7 +546,7 @@
                         <option value="inactive">Inativo</option>
                     </select>
                 </div>
-                <div style="display: flex; gap: 10px; margin-top: 20px;">
+                <div class="button-row">
                     <button type="submit" class="btn btn-primary">Salvar</button>
                     <button type="button" class="btn btn-secondary" onclick="closeSubscriberModal()">Cancelar</button>
                 </div>
@@ -596,7 +596,7 @@
                         <option value="false">Inativo</option>
                     </select>
                 </div>
-                <div style="display: flex; gap: 10px; margin-top: 20px;">
+                <div class="button-row">
                     <button type="submit" class="btn btn-primary">Salvar</button>
                     <button type="button" class="btn btn-secondary" onclick="closeChannelModal()">Cancelar</button>
                 </div>
@@ -619,7 +619,7 @@
                     <label>Senha</label>
                     <input type="password" id="adminPassword" placeholder="Senha (mínimo 8 caracteres)" required autocomplete="new-password">
                 </div>
-                <div style="display: flex; gap: 10px; margin-top: 20px;">
+                <div class="button-row">
                     <button type="submit" class="btn btn-primary">Salvar</button>
                     <button type="button" class="btn btn-secondary" onclick="closeAdminModal()">Cancelar</button>
                 </div>
@@ -635,9 +635,9 @@
         <h2>📂 Importar Assinantes em Massa</h2>
         <div id="importAlert" class="alert"></div>
         
-        <div style="background: #f7fafc; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
-            <h3 style="margin-bottom: 10px;">📋 Instruções:</h3>
-            <ol style="margin-left: 20px; line-height: 1.8;">
+        <div class="modal-info">
+            <h3>📋 Instruções:</h3>
+            <ol>
                 <li>Baixe o modelo CSV clicando em "Baixar Modelo"</li>
                 <li>Preencha com os dados dos assinantes</li>
                 <li>Colunas obrigatórias: <strong>nome, email, telefone, plano</strong></li>
@@ -648,20 +648,20 @@
 
         <div class="form-group">
             <label>Arquivo CSV</label>
-            <input type="file" id="csvFile" accept=".csv" style="padding: 10px; border: 2px dashed #cbd5e0; border-radius: 8px;">
+            <input type="file" id="csvFile" accept=".csv" class="file-input">
         </div>
 
-        <div id="importPreview" style="display: none; margin: 20px 0;">
+        <div id="importPreview" class="modal-section" style="display: none;">
             <h3>📊 Preview (primeiras 5 linhas):</h3>
-            <div id="previewTable" style="max-height: 200px; overflow-y: auto; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px;"></div>
+            <div id="previewTable" class="preview-table"></div>
         </div>
 
-        <div id="importResults" style="display: none; margin: 20px 0;">
+        <div id="importResults" class="modal-section" style="display: none;">
             <h3>✅ Resultados da Importação:</h3>
-            <div id="resultsContent" style="background: #f7fafc; padding: 15px; border-radius: 8px;"></div>
+            <div id="resultsContent" class="results-content"></div>
         </div>
 
-        <div style="display: flex; gap: 10px; margin-top: 20px;">
+        <div class="button-row">
             <button class="btn btn-primary" onclick="processImport()" id="importBtn">Importar</button>
             <button type="button" class="btn btn-secondary" onclick="closeImportModal()">Fechar</button>
         </div>
