@@ -842,6 +842,446 @@
     <!-- Modais (mantém os mesmos do código anterior) -->
     <!-- ... adicione todos os modais aqui ... -->
 
-    <script src="admin.js"></script>
+<script>
+        // Variável global para controlar tabs
+        let currentTab = 'subscribers';
+
+        // Função para mostrar tabs
+        function showTab(tabName, element) {
+            // Remove active de todos os nav-items
+            document.querySelectorAll('.nav-item').forEach(item => {
+                item.classList.remove('active');
+            });
+            
+            // Adiciona active no item clicado
+            if (element) {
+                element.classList.add('active');
+            }
+            
+            // Esconde todos os tab-contents
+            document.querySelectorAll('.tab-content').forEach(content => {
+                content.classList.remove('active');
+            });
+            
+            // Mostra o tab-content correto
+            const tabContent = document.getElementById(tabName + 'Tab');
+            if (tabContent) {
+                tabContent.classList.add('active');
+            }
+            
+            currentTab = tabName;
+            
+            // Carrega dados da tab
+            if (tabName === 'subscribers') {
+                loadSubscribers();
+            } else if (tabName === 'channels') {
+                loadChannels();
+            } else if (tabName === 'admins') {
+                loadAdmins();
+            } else if (tabName === 'logs') {
+                loadLogs();
+            }
+        }
+
+        // Login
+        document.getElementById('loginForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+            const alert = document.getElementById('loginAlert');
+            
+            try {
+                const response = await fetch('/api/admin/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, password })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    localStorage.setItem('adminToken', data.token);
+                    document.getElementById('loginContainer').style.display = 'none';
+                    document.getElementById('dashboard').classList.add('active');
+                    loadDashboard();
+                } else {
+                    alert.textContent = data.message || 'Credenciais inválidas';
+                    alert.classList.add('show');
+                }
+            } catch (error) {
+                alert.textContent = 'Erro ao fazer login';
+                alert.classList.add('show');
+            }
+        });
+
+        // Logout
+        function logout() {
+            localStorage.removeItem('adminToken');
+            location.reload();
+        }
+
+        // Verificar token ao carregar
+        window.addEventListener('load', () => {
+            const token = localStorage.getItem('adminToken');
+            if (token) {
+                document.getElementById('loginContainer').style.display = 'none';
+                document.getElementById('dashboard').classList.add('active');
+                loadDashboard();
+            }
+        });
+
+        // Carregar dashboard
+        async function loadDashboard() {
+            await loadStats();
+            await loadSubscribers();
+        }
+
+        // Carregar estatísticas
+        async function loadStats() {
+            try {
+                const token = localStorage.getItem('adminToken');
+                const response = await fetch('/api/admin/stats', {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    document.getElementById('totalSubscribers').textContent = data.stats.totalSubscribers || 0;
+                    document.getElementById('totalAuthorized').textContent = data.stats.totalAuthorized || 0;
+                    document.getElementById('totalChannels').textContent = data.stats.totalChannels || 0;
+                }
+            } catch (error) {
+                console.error('Erro ao carregar stats:', error);
+            }
+        }
+
+        // Carregar assinantes
+        async function loadSubscribers() {
+            try {
+                const token = localStorage.getItem('adminToken');
+                const response = await fetch('/api/admin/subscribers', {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    renderSubscribersTable(data.subscribers || []);
+                }
+            } catch (error) {
+                console.error('Erro ao carregar assinantes:', error);
+            }
+        }
+
+        // Renderizar tabela de assinantes
+        function renderSubscribersTable(subscribers) {
+            const container = document.getElementById('subscribersTable');
+            
+            if (subscribers.length === 0) {
+                container.innerHTML = '<p style="text-align: center; padding: 40px; color: #64748b;">Nenhum assinante cadastrado</p>';
+                return;
+            }
+            
+            let html = `
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Nome</th>
+                            <th>Email</th>
+                            <th>Telefone</th>
+                            <th>Plano</th>
+                            <th>Status</th>
+                            <th>Ações</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+            `;
+            
+            subscribers.forEach(sub => {
+                const statusBadge = sub.status === 'active' 
+                    ? '<span class="badge badge-success">Ativo</span>' 
+                    : '<span class="badge badge-danger">Inativo</span>';
+                
+                html += `
+                    <tr>
+                        <td>${sub.name}</td>
+                        <td>${sub.email}</td>
+                        <td>${sub.phone}</td>
+                        <td>${sub.plan}</td>
+                        <td>${statusBadge}</td>
+                        <td class="actions">
+                            <button class="btn btn-small btn-secondary" onclick="editSubscriber('${sub.id}')">Editar</button>
+                            <button class="btn btn-small btn-danger" onclick="deleteSubscriber('${sub.id}')">Excluir</button>
+                        </td>
+                    </tr>
+                `;
+            });
+            
+            html += '</tbody></table>';
+            container.innerHTML = html;
+        }
+
+        // Carregar canais
+        async function loadChannels() {
+            try {
+                const token = localStorage.getItem('adminToken');
+                const response = await fetch('/api/admin/channels', {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    renderChannelsTable(data.channels || []);
+                }
+            } catch (error) {
+                console.error('Erro ao carregar canais:', error);
+            }
+        }
+
+        // Renderizar tabela de canais
+        function renderChannelsTable(channels) {
+            const container = document.getElementById('channelsTable');
+            
+            if (channels.length === 0) {
+                container.innerHTML = '<p style="text-align: center; padding: 40px; color: #64748b;">Nenhum canal cadastrado</p>';
+                return;
+            }
+            
+            let html = `
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Nome</th>
+                            <th>Chat ID</th>
+                            <th>Plano</th>
+                            <th>Status</th>
+                            <th>Ações</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+            `;
+            
+            channels.forEach(channel => {
+                const statusBadge = channel.active 
+                    ? '<span class="badge badge-success">Ativo</span>' 
+                    : '<span class="badge badge-danger">Inativo</span>';
+                
+                html += `
+                    <tr>
+                        <td>${channel.name}</td>
+                        <td>${channel.chatId}</td>
+                        <td>${channel.plan}</td>
+                        <td>${statusBadge}</td>
+                        <td class="actions">
+                            <button class="btn btn-small btn-secondary" onclick="editChannel('${channel.id}')">Editar</button>
+                            <button class="btn btn-small btn-danger" onclick="deleteChannel('${channel.id}')">Excluir</button>
+                        </td>
+                    </tr>
+                `;
+            });
+            
+            html += '</tbody></table>';
+            container.innerHTML = html;
+        }
+
+        // Carregar admins
+        async function loadAdmins() {
+            try {
+                const token = localStorage.getItem('adminToken');
+                const response = await fetch('/api/admin/admins', {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    renderAdminsTable(data.admins || []);
+                }
+            } catch (error) {
+                console.error('Erro ao carregar admins:', error);
+            }
+        }
+
+        // Renderizar tabela de admins
+        function renderAdminsTable(admins) {
+            const container = document.getElementById('adminsTable');
+            
+            if (admins.length === 0) {
+                container.innerHTML = '<p style="text-align: center; padding: 40px; color: #64748b;">Nenhum administrador cadastrado</p>';
+                return;
+            }
+            
+            let html = `
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Usuário</th>
+                            <th>Criado em</th>
+                            <th>Ações</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+            `;
+            
+            admins.forEach(admin => {
+                html += `
+                    <tr>
+                        <td>${admin.username}</td>
+                        <td>${new Date(admin.createdAt).toLocaleString('pt-BR')}</td>
+                        <td class="actions">
+                            <button class="btn btn-small btn-danger" onclick="deleteAdmin('${admin.id}')">Excluir</button>
+                        </td>
+                    </tr>
+                `;
+            });
+            
+            html += '</tbody></table>';
+            container.innerHTML = html;
+        }
+
+        // Carregar logs
+        async function loadLogs() {
+            try {
+                const token = localStorage.getItem('adminToken');
+                const response = await fetch('/api/admin/logs', {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    renderLogsTable(data.logs || []);
+                }
+            } catch (error) {
+                console.error('Erro ao carregar logs:', error);
+            }
+        }
+
+        // Renderizar tabela de logs
+        function renderLogsTable(logs) {
+            const container = document.getElementById('logsTable');
+            
+            if (logs.length === 0) {
+                container.innerHTML = '<p style="text-align: center; padding: 40px; color: #64748b;">Nenhum log registrado</p>';
+                return;
+            }
+            
+            let html = `
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Data</th>
+                            <th>Usuário</th>
+                            <th>Ação</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+            `;
+            
+            logs.forEach(log => {
+                html += `
+                    <tr>
+                        <td>${new Date(log.timestamp).toLocaleString('pt-BR')}</td>
+                        <td>${log.userName}</td>
+                        <td>${log.action}</td>
+                        <td><span class="badge badge-success">Sucesso</span></td>
+                    </tr>
+                `;
+            });
+            
+            html += '</tbody></table>';
+            container.innerHTML = html;
+        }
+
+        // Funções de modal (simplificadas por enquanto)
+        function openAddSubscriberModal() {
+            alert('Função em desenvolvimento');
+        }
+
+        function openImportModal() {
+            alert('Função em desenvolvimento');
+        }
+
+        function downloadTemplate() {
+            alert('Função em desenvolvimento');
+        }
+
+        function openAddChannelModal() {
+            alert('Função em desenvolvimento');
+        }
+
+        function openAddAdminModal() {
+            alert('Função em desenvolvimento');
+        }
+
+        function editSubscriber(id) {
+            alert('Editar assinante: ' + id);
+        }
+
+        function deleteSubscriber(id) {
+            if (confirm('Deseja realmente excluir este assinante?')) {
+                // Implementar
+            }
+        }
+
+        function editChannel(id) {
+            alert('Editar canal: ' + id);
+        }
+
+        function deleteChannel(id) {
+            if (confirm('Deseja realmente excluir este canal?')) {
+                // Implementar
+            }
+        }
+
+        function deleteAdmin(id) {
+            if (confirm('Deseja realmente excluir este administrador?')) {
+                // Implementar
+            }
+        }
+
+        async function syncUsers() {
+            const btn = document.getElementById('syncBtn');
+            const alert = document.getElementById('syncAlert');
+            
+            btn.disabled = true;
+            btn.textContent = '⏳ Sincronizando...';
+            
+            try {
+                const token = localStorage.getItem('adminToken');
+                const response = await fetch('/api/admin/sync', {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    alert.textContent = '✅ ' + data.message;
+                    alert.className = 'alert alert-success show';
+                    loadStats();
+                } else {
+                    alert.textContent = '❌ ' + data.message;
+                    alert.className = 'alert alert-error show';
+                }
+            } catch (error) {
+                alert.textContent = '❌ Erro ao sincronizar';
+                alert.className = 'alert alert-error show';
+            } finally {
+                btn.disabled = false;
+                btn.textContent = '🔄 Sincronizar Agora';
+                
+                setTimeout(() => {
+                    alert.classList.remove('show');
+                }, 5000);
+            }
+        }
+    </script>
+</body>
+</html>
 </body>
 </html>
