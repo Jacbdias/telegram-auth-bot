@@ -114,7 +114,8 @@
             color: var(--text-primary);
         }
 
-        .form-group input::placeholder {
+        .form-group input::placeholder,
+        .form-group textarea::placeholder {
             color: #94a3b8;
         }
 
@@ -125,6 +126,24 @@
             border-color: var(--sidebar-bg);
             box-shadow: 0 0 0 4px rgba(26, 29, 38, 0.12);
             background: #ffffff;
+        }
+
+        .form-group.inline {
+            display: flex;
+            align-items: center;
+        }
+
+        .form-group.inline label {
+            margin: 0;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            cursor: pointer;
+        }
+
+        .form-group.inline input[type="checkbox"] {
+            width: auto;
+            cursor: pointer;
         }
 
         .btn-primary {
@@ -180,6 +199,12 @@
             background: rgba(234, 179, 8, 0.15);
             color: #92400e;
             border: 1px solid rgba(234, 179, 8, 0.3);
+        }
+
+        .alert-info {
+            background: rgba(59, 130, 246, 0.15);
+            color: #1e3a8a;
+            border: 1px solid rgba(59, 130, 246, 0.3);
         }
 
         /* Dashboard Layout */
@@ -353,13 +378,6 @@
             color: var(--success);
         }
 
-        .stat-card .change {
-            font-size: 13px;
-            color: var(--success);
-            margin-top: 8px;
-            font-weight: 600;
-        }
-
         /* Action Banner */
         .action-banner {
             background: linear-gradient(135deg, var(--sidebar-bg) 0%, #252935 100%);
@@ -414,6 +432,11 @@
         .action-banner-button:hover {
             transform: translateY(-2px);
             box-shadow: 0 8px 16px rgba(0, 255, 65, 0.3);
+        }
+
+        .action-banner-button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
         }
 
         /* Card */
@@ -511,6 +534,24 @@
             background: #dc2626;
         }
 
+        .btn-edit {
+            background: #3b82f6;
+            color: white;
+        }
+
+        .btn-edit:hover {
+            background: #2563eb;
+        }
+
+        .btn-delete {
+            background: var(--danger);
+            color: white;
+        }
+
+        .btn-delete:hover {
+            background: #dc2626;
+        }
+
         /* Table */
         .table-container {
             overflow-x: auto;
@@ -541,12 +582,19 @@
             background: #f8fafc;
         }
 
+        .empty-state {
+            text-align: center;
+            padding: 40px;
+            color: var(--text-secondary);
+        }
+
         .badge {
             padding: 4px 10px;
             border-radius: 6px;
             font-size: 11px;
             font-weight: 600;
             text-transform: uppercase;
+            display: inline-block;
         }
 
         .badge-success {
@@ -576,6 +624,113 @@
 
         .tab-content.active {
             display: block;
+        }
+
+        /* Checkbox List */
+        .checkbox-list {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            max-height: 300px;
+            overflow-y: auto;
+            padding: 12px;
+            background: var(--main-bg);
+            border-radius: 8px;
+        }
+
+        .checkbox-item {
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+            padding: 12px;
+            background: white;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .checkbox-item:hover:not(.disabled) {
+            border-color: var(--sidebar-bg);
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        }
+
+        .checkbox-item.disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .checkbox-item input[type="checkbox"] {
+            margin-top: 2px;
+            cursor: pointer;
+        }
+
+        .checkbox-details {
+            flex: 1;
+        }
+
+        .checkbox-title {
+            font-weight: 600;
+            margin-bottom: 4px;
+        }
+
+        .checkbox-subtitle {
+            font-size: 13px;
+            color: var(--text-secondary);
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            margin-bottom: 4px;
+        }
+
+        .checkbox-meta {
+            font-size: 12px;
+            color: var(--text-secondary);
+        }
+
+        .checkbox-actions {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+
+        .button-group {
+            display: flex;
+            gap: 8px;
+        }
+
+        .selected-count {
+            font-size: 13px;
+            color: var(--text-secondary);
+            font-weight: 600;
+        }
+
+        .form-hint {
+            font-size: 12px;
+            color: var(--text-secondary);
+            margin-top: 6px;
+        }
+
+        .form-hint code {
+            background: var(--main-bg);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 11px;
+        }
+
+        .stacked-form .form-group {
+            margin-bottom: 24px;
+        }
+
+        .button-row {
+            display: flex;
+            gap: 12px;
+            margin-top: 24px;
+        }
+
+        .button-row .btn {
+            flex: 1;
         }
 
         /* Modal */
@@ -612,14 +767,55 @@
             font-size: 24px;
         }
 
-        .button-row {
-            display: flex;
-            gap: 12px;
+        .modal-content h3 {
+            font-size: 18px;
+            margin-bottom: 16px;
+            color: var(--text-primary);
+        }
+
+        .modal-info {
+            background: var(--main-bg);
+            padding: 20px;
+            border-radius: 12px;
+            margin-bottom: 24px;
+        }
+
+        .modal-info h3 {
+            font-size: 16px;
+            margin-bottom: 12px;
+        }
+
+        .modal-info ol {
+            margin-left: 20px;
+        }
+
+        .modal-info li {
+            margin-bottom: 8px;
+            color: var(--text-secondary);
+        }
+
+        .modal-section {
             margin-top: 24px;
         }
 
-        .button-row .btn {
-            flex: 1;
+        .preview-table {
+            max-height: 300px;
+            overflow-y: auto;
+        }
+
+        .results-content {
+            font-size: 14px;
+        }
+
+        .file-input {
+            padding: 12px;
+            background: var(--main-bg);
+        }
+
+        .empty-message {
+            text-align: center;
+            padding: 20px;
+            color: var(--text-secondary);
         }
 
         /* Responsive */
@@ -627,6 +823,7 @@
             .sidebar {
                 transform: translateX(-100%);
                 transition: transform 0.3s ease;
+                z-index: 100;
             }
 
             .sidebar.active {
@@ -636,6 +833,7 @@
             .main-content {
                 margin-left: 0;
                 width: 100%;
+                padding: 20px;
             }
 
             .stats-grid {
@@ -646,6 +844,27 @@
                 flex-direction: column;
                 align-items: stretch;
             }
+
+            .card h2 {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+
+            .card-actions {
+                width: 100%;
+            }
+
+            .search-box {
+                min-width: 100%;
+            }
+
+            table {
+                font-size: 12px;
+            }
+
+            th, td {
+                padding: 12px 8px;
+            }
         }
 
         @media (max-width: 520px) {
@@ -655,6 +874,14 @@
 
             .brand-logo {
                 max-width: 92px;
+            }
+
+            .main-content {
+                padding: 16px;
+            }
+
+            .card {
+                padding: 20px;
             }
         }
     </style>
@@ -694,25 +921,25 @@
                 <img src="/assets/logo.svg" alt="Fatos da Bolsa" class="sidebar-logo" />
                 <div class="sidebar-title">Plano</div>
                 <div class="sidebar-user">
-                    Administrador
+                    <span id="loggedUser">Administrador</span>
                     <span class="sidebar-badge">ADMIN</span>
                 </div>
             </div>
 
-<nav class="sidebar-nav">
-    <div class="nav-item tab active" data-tab="subscribers" onclick="showTab('subscribers', this)">
-        📊 Assinantes
-    </div>
-    <div class="nav-item tab" data-tab="channels" onclick="showTab('channels', this)">
-        📢 Canais
-    </div>
-    <div class="nav-item tab" data-tab="admins" onclick="showTab('admins', this)">
-        👥 Administradores
-    </div>
-    <div class="nav-item tab" data-tab="logs" onclick="showTab('logs', this)">
-        📋 Logs
-    </div>
-</nav>
+            <nav class="sidebar-nav">
+                <div class="nav-item tab active" data-tab="subscribers" onclick="showTab('subscribers', this)">
+                    📊 Assinantes
+                </div>
+                <div class="nav-item tab" data-tab="channels" onclick="showTab('channels', this)">
+                    📢 Canais
+                </div>
+                <div class="nav-item tab" data-tab="admins" onclick="showTab('admins', this)">
+                    👥 Administradores
+                </div>
+                <div class="nav-item tab" data-tab="logs" onclick="showTab('logs', this)">
+                    📋 Logs
+                </div>
+            </nav>
 
             <div class="sidebar-footer">
                 <button class="btn-logout" onclick="logout()">🚪 Sair</button>
@@ -779,20 +1006,29 @@
                 <div class="card">
                     <h2>Enviar mensagem para canais</h2>
                     <div id="broadcastAlert" class="alert"></div>
-                    <form id="broadcastForm">
+                    <form id="broadcastForm" class="stacked-form">
                         <div class="form-group">
                             <label>Selecione os canais</label>
-                            <div id="broadcastChannelList"></div>
+                            <div class="checkbox-actions">
+                                <div class="button-group">
+                                    <button type="button" class="btn btn-small" id="broadcastSelectAll">Selecionar todos</button>
+                                    <button type="button" class="btn btn-small btn-secondary" id="broadcastClear">Limpar seleção</button>
+                                </div>
+                                <span id="broadcastSelectedCount" class="selected-count">Nenhum canal ativo disponível</span>
+                            </div>
+                            <div class="checkbox-list" id="broadcastChannelList"></div>
                         </div>
 
                         <div class="form-group">
                             <label>Mensagem</label>
                             <textarea id="broadcastMessage" rows="4" placeholder="Escreva a mensagem"></textarea>
+                            <p class="form-hint">Emojis são suportados normalmente. A mensagem pode ficar em branco caso você envie apenas uma imagem.</p>
                         </div>
 
                         <div class="form-group">
                             <label>Imagem (opcional)</label>
                             <input type="file" id="broadcastMedia" accept="image/*">
+                            <p class="form-hint">Formatos aceitos: JPG, PNG, GIF ou WEBP com até 7&nbsp;MB.</p>
                         </div>
 
                         <div class="form-group">
@@ -801,10 +1037,21 @@
                                 <option value="">Texto simples</option>
                                 <option value="HTML">HTML</option>
                                 <option value="MarkdownV2">Markdown V2</option>
+                                <option value="Markdown">Markdown (legado)</option>
                             </select>
+                            <p class="form-hint">Para negrito use <code>&lt;b&gt;texto&lt;/b&gt;</code> no modo HTML ou <code>*texto*</code> (um único asterisco em cada lado) nos modos Markdown.</p>
                         </div>
 
-                        <button type="submit" class="btn btn-primary">Enviar mensagem</button>
+                        <div class="form-group inline">
+                            <label>
+                                <input type="checkbox" id="broadcastDisableNotification">
+                                Enviar sem notificação (silencioso)
+                            </label>
+                        </div>
+
+                        <div class="button-row">
+                            <button type="submit" class="btn btn-primary" id="broadcastSubmit">Enviar mensagem</button>
+                        </div>
                     </form>
                 </div>
 
@@ -839,12 +1086,166 @@
         </div>
     </div>
 
-    <!-- Modais (mantém os mesmos do código anterior) -->
-    <!-- ... adicione todos os modais aqui ... -->
-<script>
+    <!-- Modal: Adicionar/Editar Assinante -->
+    <div id="subscriberModal" class="modal">
+        <div class="modal-content">
+            <h2 id="subscriberModalTitle">Novo Assinante</h2>
+            <div id="subscriberModalAlert" class="alert"></div>
+            <form id="subscriberForm">
+                <input type="hidden" id="subscriberId">
+                <div class="form-group">
+                    <label>Nome</label>
+                    <input type="text" id="subscriberName" required>
+                </div>
+                <div class="form-group">
+                    <label>Email</label>
+                    <input type="email" id="subscriberEmail" required>
+                </div>
+                <div class="form-group">
+                    <label>Telefone</label>
+                    <input type="tel" id="subscriberPhone" placeholder="11999999999" required>
+                </div>
+                <div class="form-group">
+                    <label>Plano</label>
+                    <select id="subscriberPlan" required>
+                        <option value="">Selecione...</option>
+                        <option value="CF VIP - FATOS DA BOLSA 1">CF VIP - FATOS DA BOLSA 1</option>
+                        <option value="CF VIP - FATOS DA BOLSA 2">CF VIP - FATOS DA BOLSA 2</option>
+                        <option value="CF VIP - FATOS DA BOLSA 3">CF VIP - FATOS DA BOLSA 3</option>
+                        <option value="Close Friends LITE">Close Friends LITE</option>
+                        <option value="Projeto Renda Passiva">Projeto Renda Passiva</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Status</label>
+                    <select id="subscriberStatus">
+                        <option value="active">Ativo</option>
+                        <option value="inactive">Inativo</option>
+                    </select>
+                </div>
+                <div class="button-row">
+                    <button type="submit" class="btn btn-primary">Salvar</button>
+                    <button type="button" class="btn btn-secondary" onclick="closeSubscriberModal()">Cancelar</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal: Adicionar/Editar Canal -->
+    <div id="channelModal" class="modal">
+        <div class="modal-content">
+            <h2 id="channelModalTitle">Novo Canal</h2>
+            <div id="channelModalAlert" class="alert"></div>
+            <form id="channelForm">
+                <input type="hidden" id="channelId">
+                <div class="form-group">
+                    <label>Nome do Canal</label>
+                    <input type="text" id="channelName" required>
+                </div>
+                <div class="form-group">
+                    <label>Chat ID</label>
+                    <input type="text" id="channelChatId" placeholder="-1001234567890" required>
+                </div>
+                <div class="form-group">
+                    <label>Descrição</label>
+                    <input type="text" id="channelDescription">
+                </div>
+                <div class="form-group">
+                    <label>Plano</label>
+                    <select id="channelPlan" required>
+                        <option value="">Selecione...</option>
+                        <option value="CF VIP - FATOS DA BOLSA 1">CF VIP - FATOS DA BOLSA 1</option>
+                        <option value="CF VIP - FATOS DA BOLSA 2">CF VIP - FATOS DA BOLSA 2</option>
+                        <option value="CF VIP - FATOS DA BOLSA 3">CF VIP - FATOS DA BOLSA 3</option>
+                        <option value="Close Friends LITE">Close Friends LITE</option>
+                        <option value="Projeto Renda Passiva">Projeto Renda Passiva</option>
+                        <option value="all">Todos os Planos</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Ordem</label>
+                    <input type="number" id="channelOrder" value="0">
+                </div>
+                <div class="form-group">
+                    <label>Status</label>
+                    <select id="channelActive">
+                        <option value="true">Ativo</option>
+                        <option value="false">Inativo</option>
+                    </select>
+                </div>
+                <div class="button-row">
+                    <button type="submit" class="btn btn-primary">Salvar</button>
+                    <button type="button" class="btn btn-secondary" onclick="closeChannelModal()">Cancelar</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal: Administradores -->
+    <div id="adminModal" class="modal">
+        <div class="modal-content">
+            <h2 id="adminModalTitle">Novo Administrador</h2>
+            <div id="adminModalAlert" class="alert"></div>
+            <form id="adminForm">
+                <input type="hidden" id="adminId">
+                <div class="form-group">
+                    <label>Usuário</label>
+                    <input type="text" id="adminUsername" placeholder="usuario" required autocomplete="username">
+                </div>
+                <div class="form-group">
+                    <label>Senha</label>
+                    <input type="password" id="adminPassword" placeholder="Senha (mínimo 8 caracteres)" required autocomplete="new-password">
+                </div>
+                <div class="button-row">
+                    <button type="submit" class="btn btn-primary">Salvar</button>
+                    <button type="button" class="btn btn-secondary" onclick="closeAdminModal()">Cancelar</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal: Importar CSV -->
+    <div id="importModal" class="modal">
+        <div class="modal-content">
+            <h2>📂 Importar Assinantes em Massa</h2>
+            <div id="importAlert" class="alert"></div>
+            
+            <div class="modal-info">
+                <h3>📋 Instruções:</h3>
+                <ol>
+                    <li>Baixe o modelo CSV clicando em "Baixar Modelo"</li>
+                    <li>Preencha com os dados dos assinantes</li>
+                    <li>Colunas obrigatórias: <strong>nome, email, telefone, plano</strong></li>
+                    <li>Telefone sem formatação (ex: 11999999999)</li>
+                    <li>Selecione o arquivo e clique em "Importar"</li>
+                </ol>
+            </div>
+
+            <div class="form-group">
+                <label>Arquivo CSV</label>
+                <input type="file" id="csvFile" accept=".csv" class="file-input">
+            </div>
+
+            <div id="importPreview" class="modal-section" style="display: none;">
+                <h3>📊 Preview (primeiras 5 linhas):</h3>
+                <div id="previewTable" class="preview-table"></div>
+            </div>
+
+            <div id="importResults" class="modal-section" style="display: none;">
+                <h3>✅ Resultados da Importação:</h3>
+                <div id="resultsContent" class="results-content"></div>
+            </div>
+
+            <div class="button-row">
+                <button class="btn btn-primary" onclick="processImport()" id="importBtn">Importar</button>
+                <button type="button" class="btn btn-secondary" onclick="closeImportModal()">Fechar</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
         let subscribersData = [];
     </script>
     <script src="admin.js"></script>
 </body>
 </html>
-
