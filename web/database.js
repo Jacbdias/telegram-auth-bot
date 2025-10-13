@@ -8,6 +8,12 @@ const pool = new Pool({
   }
 });
 
+// Helper para normalizar telefone
+function normalizePhone(phone) {
+  if (!phone) return '';
+  return phone.replace(/\D/g, '');
+}
+
 // ============== ADMIN USERS ==============
 
 // Busca admin por username
@@ -122,9 +128,11 @@ async function countAdminUsers() {
 async function getSubscriberByEmailAndPhone(email, phone) {
   try {
     const result = await pool.query(
-      `SELECT id, name, email, phone, plan, status 
-       FROM subscribers 
-       WHERE email = $1 AND phone = $2 AND status = 'active'`,
+      `SELECT id, name, email, phone, plan, status
+       FROM subscribers
+       WHERE email = $1
+         AND REGEXP_REPLACE(phone, '[^0-9]', '', 'g') = $2
+         AND status = 'active'`,
       [email, phone]
     );
 
@@ -440,7 +448,7 @@ async function createSubscriber(name, email, phone, plan) {
       `INSERT INTO subscribers (name, email, phone, plan, status)
        VALUES ($1, $2, $3, $4, 'active')
        RETURNING *`,
-      [name, email, phone, plan]
+      [name, email, normalizePhone(phone), plan]
     );
     return result.rows[0];
   } catch (error) {
@@ -464,10 +472,10 @@ async function updateSubscriber(id, name, email, phone, plan, status) {
     
     // Atualiza subscriber
     await client.query(
-      `UPDATE subscribers 
+      `UPDATE subscribers
        SET name = $1, email = $2, phone = $3, plan = $4, status = $5, updated_at = NOW()
        WHERE id = $6`,
-      [name, email, phone, plan, status, id]
+      [name, email, normalizePhone(phone), plan, status, id]
     );
     
     // Se mudou para inactive, revoga autorização E REMOVE DOS GRUPOS

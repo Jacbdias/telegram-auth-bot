@@ -217,11 +217,11 @@
 
             <div class="form-group">
                 <label for="phone">📱 Telefone cadastrado</label>
-                <input 
-                    type="tel" 
-                    id="phone" 
-                    name="phone" 
-                    placeholder="(11) 99999-9999" 
+                <input
+                    type="tel"
+                    id="phone"
+                    name="phone"
+                    placeholder="+1 415 555 2671"
                     required
                     autocomplete="tel"
                 >
@@ -250,27 +250,6 @@
         const alert = document.getElementById('alert');
         const loader = document.getElementById('loader');
         const submitBtn = document.getElementById('submitBtn');
-        const phoneInput = document.getElementById('phone');
-
-        // Máscara de telefone
-        phoneInput.addEventListener('input', function(e) {
-            let value = e.target.value.replace(/\D/g, '');
-            
-            if (value.length <= 11) {
-                if (value.length > 10) {
-                    value = value.replace(/(\d{2})(\d{5})(\d{4})/, '($1) $2-$3');
-                } else if (value.length > 6) {
-                    value = value.replace(/(\d{2})(\d{4})(\d{0,4})/, '($1) $2-$3');
-                } else if (value.length > 2) {
-                    value = value.replace(/(\d{2})(\d{0,5})/, '($1) $2');
-                } else {
-                    value = value.replace(/(\d*)/, '($1');
-                }
-            }
-            
-            e.target.value = value;
-        });
-
         // Pega token da URL
         const urlParams = new URLSearchParams(window.location.search);
         const token = urlParams.get('token');
