@@ -106,7 +106,8 @@
             font-size: 14px;
         }
 
-        input {
+        input,
+        select {
             width: 100%;
             padding: 14px 16px;
             border: 1px solid #cbd5e1;
@@ -122,11 +123,40 @@
             color: #94a3b8;
         }
 
-        input:focus {
+        input:focus,
+        select:focus {
             outline: none;
             border-color: var(--border-strong);
             box-shadow: 0 0 0 4px rgba(17, 24, 39, 0.12);
             background: var(--surface);
+        }
+
+        select {
+            appearance: none;
+            background-image: url('data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="none" stroke="%231f2937" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" viewBox="0 0 24 24"%3E%3Cpath d="m6 9 6 6 6-6"/%3E%3C/svg%3E');
+            background-repeat: no-repeat;
+            background-position: right 14px center;
+            background-size: 16px;
+            padding-right: 44px;
+        }
+
+        .phone-input-group {
+            display: flex;
+            gap: 12px;
+        }
+
+        .phone-input-group select {
+            flex: 0 0 44%;
+        }
+
+        .phone-input-group input {
+            flex: 1;
+        }
+
+        .helper-text {
+            font-size: 13px;
+            color: var(--text-secondary);
+            margin-top: 4px;
         }
 
         .btn {
@@ -266,6 +296,14 @@
             .brand-logo {
                 max-width: 92px;
             }
+
+            .phone-input-group {
+                flex-direction: column;
+            }
+
+            .phone-input-group select {
+                flex: none;
+            }
         }
     </style>
 </head>
@@ -296,14 +334,47 @@
 
             <div class="form-group">
                 <label for="phone">📱 Telefone cadastrado</label>
-                <input
-                    type="tel"
-                    id="phone"
-                    name="phone"
-                    placeholder="+1 415 555 2671"
-                    required
-                    autocomplete="tel"
-                >
+                <div class="phone-input-group">
+                    <select id="countryCode" name="countryCode" required>
+                        <option value="" disabled selected>🌍 Selecione</option>
+                        <option value="+1" data-example="415 555 2671">🇺🇸 +1 Estados Unidos / Canadá</option>
+                        <option value="+44" data-example="20 7946 0018">🇬🇧 +44 Reino Unido</option>
+                        <option value="+61" data-example="2 9876 5432">🇦🇺 +61 Austrália</option>
+                        <option value="+49" data-example="30 1234 5678">🇩🇪 +49 Alemanha</option>
+                        <option value="+351" data-example="912 345 678">🇵🇹 +351 Portugal</option>
+                        <option value="+34" data-example="612 34 56 78">🇪🇸 +34 Espanha</option>
+                        <option value="+55" data-example="11 91234 5678">🇧🇷 +55 Brasil</option>
+                        <option value="+33" data-example="6 12 34 56 78">🇫🇷 +33 França</option>
+                        <option value="+81" data-example="90 1234 5678">🇯🇵 +81 Japão</option>
+                        <option value="+973" data-example="3214 5678">🇧🇭 +973 Bahrein</option>
+                        <option value="+65" data-example="8123 4567">🇸🇬 +65 Singapura</option>
+                        <option value="+63" data-example="912 345 6789">🇵🇭 +63 Filipinas</option>
+                        <option value="+82" data-example="10 1234 5678">🇰🇷 +82 Coreia do Sul</option>
+                        <option value="+7" data-example="916 123 4567">🇷🇺 +7 Rússia</option>
+                        <option value="+52" data-example="55 1234 5678">🇲🇽 +52 México</option>
+                        <option value="+39" data-example="312 345 6789">🇮🇹 +39 Itália</option>
+                        <option value="+86" data-example="138 0013 8000">🇨🇳 +86 China</option>
+                        <option value="+966" data-example="50 123 4567">🇸🇦 +966 Arábia Saudita</option>
+                        <option value="+974" data-example="3312 3456">🇶🇦 +974 Catar</option>
+                        <option value="+41" data-example="78 123 45 67">🇨🇭 +41 Suíça</option>
+                        <option value="+420" data-example="601 123 456">🇨🇿 +420 República Tcheca</option>
+                        <option value="+31" data-example="6 1234 5678">🇳🇱 +31 Holanda</option>
+                        <option value="+90" data-example="532 123 4567">🇹🇷 +90 Turquia</option>
+                        <option value="+47" data-example="406 12 345">🇳🇴 +47 Noruega</option>
+                        <option value="+358" data-example="40 123 4567">🇫🇮 +358 Finlândia</option>
+                        <option value="+46" data-example="70 123 45 67">🇸🇪 +46 Suécia</option>
+                    </select>
+                    <input
+                        type="tel"
+                        id="phone"
+                        name="phone"
+                        placeholder="415 555 2671"
+                        required
+                        autocomplete="tel"
+                        inputmode="tel"
+                    >
+                </div>
+                <p class="helper-text">Selecione o código do país e informe o número como aparece no seu cadastro.</p>
             </div>
 
             <button type="submit" class="btn" id="submitBtn">
@@ -319,7 +390,7 @@
         <div class="info-box">
             <strong>ℹ️ Informações importantes</strong>
             <ul class="info-list">
-                <li>Use o mesmo email e telefone do seu cadastro.</li>
+                <li>Use o mesmo email e telefone (com DDI) do seu cadastro.</li>
                 <li>Este link expira em 15 minutos.</li>
                 <li>Em caso de dúvidas, contate o suporte.</li>
             </ul>
@@ -331,6 +402,18 @@
         const alert = document.getElementById('alert');
         const loader = document.getElementById('loader');
         const submitBtn = document.getElementById('submitBtn');
+        const countryCodeSelect = document.getElementById('countryCode');
+        const phoneInput = document.getElementById('phone');
+
+        function updatePhonePlaceholder() {
+            const selectedOption = countryCodeSelect.options[countryCodeSelect.selectedIndex];
+            const example = selectedOption ? selectedOption.dataset.example : '';
+            phoneInput.placeholder = example ? example : 'Número do telefone';
+        }
+
+        updatePhonePlaceholder();
+
+        countryCodeSelect.addEventListener('change', updatePhonePlaceholder);
         // Pega token da URL
         const urlParams = new URLSearchParams(window.location.search);
         const token = urlParams.get('token');
@@ -345,10 +428,19 @@
             e.preventDefault();
 
             const email = document.getElementById('email').value.trim();
-            const phone = document.getElementById('phone').value;
+            const countryCode = countryCodeSelect.value;
+            const phoneLocal = phoneInput.value;
+            const phoneDigits = phoneLocal.replace(/\D/g, '');
 
-            if (!email || !phone) {
+            if (!email || !countryCode || !phoneDigits) {
                 showAlert('Preencha todos os campos', 'warning');
+                return;
+            }
+
+            const phone = `${countryCode}${phoneDigits}`;
+
+            if (phone.replace(/\D/g, '').length < 6) {
+                showAlert('Informe o telefone completo, incluindo código do país e da cidade.', 'warning');
                 return;
             }
 
@@ -376,6 +468,8 @@
                         'success'
                     );
                     form.reset();
+                    countryCodeSelect.selectedIndex = 0;
+                    updatePhonePlaceholder();
                     
                     // Aguarda 3 segundos e mostra mensagem final
                     setTimeout(() => {
