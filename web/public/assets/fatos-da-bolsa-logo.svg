@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" role="img" aria-labelledby="title desc">
+  <title id="title">Logotipo Fatos da Bolsa</title>
+  <desc id="desc">Um círculo preto com contorno verde neon contendo uma seta ascendente e o texto Fatos da Bolsa em branco.</desc>
+  <circle cx="100" cy="100" r="92" fill="#000000" stroke="#39ff14" stroke-width="16" />
+  <g fill="#ffffff">
+    <rect x="62" y="82" width="20" height="50" rx="4" />
+    <rect x="88" y="70" width="20" height="62" rx="4" />
+    <rect x="114" y="58" width="20" height="74" rx="4" />
+    <path d="M134 58c9 9 18 18 27 27l-9 9-12-12v42h-18V58h12z" />
+    <path d="M69 128h62v12H69z" />
+    <text x="100" y="150" font-family="'Montserrat', 'Arial', sans-serif" font-weight="700" font-size="18" text-anchor="middle" letter-spacing="2">
+      FATOS
+    </text>
+    <text x="100" y="172" font-family="'Montserrat', 'Arial', sans-serif" font-weight="700" font-size="18" text-anchor="middle" letter-spacing="1.5">
+      DA BOLSA
+    </text>
+  </g>
+</svg>
