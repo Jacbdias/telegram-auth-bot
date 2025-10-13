@@ -60,12 +60,13 @@ app.post('/api/verify', async (req, res) => {
     });
   }
 
-  // Valida formato do telefone (Brasil)
+  // Normaliza telefone removendo caracteres não numéricos
   const phoneClean = phone.replace(/\D/g, '');
-  if (phoneClean.length < 10 || phoneClean.length > 11) {
-    return res.status(400).json({ 
-      success: false, 
-      message: 'Telefone inválido. Use o formato: (XX) XXXXX-XXXX' 
+  // Permite telefones internacionais com tamanho variável
+  if (phoneClean.length < 6) {
+    return res.status(400).json({
+      success: false,
+      message: 'Telefone inválido. Informe o número completo com DDD/DDI.'
     });
   }
 
