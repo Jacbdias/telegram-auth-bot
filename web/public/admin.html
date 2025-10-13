@@ -139,17 +139,72 @@
             border: 1px solid rgba(239, 68, 68, 0.35);
         }
 
-        /* Logo no header do dashboard */
-        .header .brand-logo-dashboard {
-            max-width: 80px;
-            height: auto;
-            margin-right: 20px;
+        /* Header do Dashboard */
+        .header {
+            background: white;
+            padding: 20px 40px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
         }
 
         .header-info {
             display: flex;
             align-items: center;
             gap: 20px;
+        }
+
+        .brand-logo-dashboard {
+            max-width: 60px;
+            height: 60px;
+            flex-shrink: 0;
+        }
+
+        .header-text {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .header-eyebrow {
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            color: #94a3b8;
+            margin: 0;
+        }
+
+        .header h1 {
+            font-size: 28px;
+            font-weight: 700;
+            color: #0f172a;
+            margin: 0;
+            line-height: 1.2;
+        }
+
+        .header p {
+            font-size: 14px;
+            color: #64748b;
+            margin: 0;
+        }
+
+        @media (max-width: 768px) {
+            .brand-logo-dashboard {
+                max-width: 50px;
+                height: 50px;
+            }
+            
+            .header-info {
+                gap: 12px;
+            }
+
+            .header {
+                flex-direction: column;
+                gap: 20px;
+                align-items: flex-start;
+            }
         }
 
         @media (max-width: 520px) {
@@ -197,7 +252,7 @@
                 <div class="header">
                     <div class="header-info">
                         <img src="/assets/logo.svg" alt="Fatos da Bolsa" class="brand-logo-dashboard" />
-                        <div>
+                        <div class="header-text">
                             <span class="header-eyebrow">Central de Controle</span>
                             <h1>Dashboard</h1>
                             <p>Escolha a área que deseja gerenciar</p>
@@ -471,46 +526,45 @@
         </div>
     </div>
 
-    <script src="admin.js"></script>
+    <!-- Modal: Importar CSV -->
+    <div id="importModal" class="modal">
+        <div class="modal-content">
+            <h2>📂 Importar Assinantes em Massa</h2>
+            <div id="importAlert" class="alert"></div>
+            
+            <div class="modal-info">
+                <h3>📋 Instruções:</h3>
+                <ol>
+                    <li>Baixe o modelo CSV clicando em "Baixar Modelo"</li>
+                    <li>Preencha com os dados dos assinantes</li>
+                    <li>Colunas obrigatórias: <strong>nome, email, telefone, plano</strong></li>
+                    <li>Telefone sem formatação (ex: 11999999999)</li>
+                    <li>Selecione o arquivo e clique em "Importar"</li>
+                </ol>
+            </div>
 
-<!-- Modal: Importar CSV -->
-<div id="importModal" class="modal">
-    <div class="modal-content">
-        <h2>📂 Importar Assinantes em Massa</h2>
-        <div id="importAlert" class="alert"></div>
-        
-        <div class="modal-info">
-            <h3>📋 Instruções:</h3>
-            <ol>
-                <li>Baixe o modelo CSV clicando em "Baixar Modelo"</li>
-                <li>Preencha com os dados dos assinantes</li>
-                <li>Colunas obrigatórias: <strong>nome, email, telefone, plano</strong></li>
-                <li>Telefone sem formatação (ex: 11999999999)</li>
-                <li>Selecione o arquivo e clique em "Importar"</li>
-            </ol>
-        </div>
+            <div class="form-group">
+                <label>Arquivo CSV</label>
+                <input type="file" id="csvFile" accept=".csv" class="file-input">
+            </div>
 
-        <div class="form-group">
-            <label>Arquivo CSV</label>
-            <input type="file" id="csvFile" accept=".csv" class="file-input">
-        </div>
+            <div id="importPreview" class="modal-section" style="display: none;">
+                <h3>📊 Preview (primeiras 5 linhas):</h3>
+                <div id="previewTable" class="preview-table"></div>
+            </div>
 
-        <div id="importPreview" class="modal-section" style="display: none;">
-            <h3>📊 Preview (primeiras 5 linhas):</h3>
-            <div id="previewTable" class="preview-table"></div>
-        </div>
+            <div id="importResults" class="modal-section" style="display: none;">
+                <h3>✅ Resultados da Importação:</h3>
+                <div id="resultsContent" class="results-content"></div>
+            </div>
 
-        <div id="importResults" class="modal-section" style="display: none;">
-            <h3>✅ Resultados da Importação:</h3>
-            <div id="resultsContent" class="results-content"></div>
-        </div>
-
-        <div class="button-row">
-            <button class="btn btn-primary" onclick="processImport()" id="importBtn">Importar</button>
-            <button type="button" class="btn btn-secondary" onclick="closeImportModal()">Fechar</button>
+            <div class="button-row">
+                <button class="btn btn-primary" onclick="processImport()" id="importBtn">Importar</button>
+                <button type="button" class="btn btn-secondary" onclick="closeImportModal()">Fechar</button>
+            </div>
         </div>
     </div>
-</div>
 
+    <script src="admin.js"></script>
 </body>
 </html>
