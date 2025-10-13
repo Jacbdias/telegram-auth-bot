@@ -1,18 +1,58 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" role="img" aria-labelledby="title desc">
   <title id="title">Logotipo Fatos da Bolsa</title>
-  <desc id="desc">Um círculo preto com contorno verde neon contendo uma seta ascendente e o texto Fatos da Bolsa em branco.</desc>
+  <desc id="desc">Um círculo preto com contorno verde neon contendo um gráfico de barras ascendentes com seta de crescimento e o texto Fatos da Bolsa em branco.</desc>
+  
+  <!-- Círculo de fundo preto com borda verde -->
   <circle cx="100" cy="100" r="92" fill="#000000" stroke="#39ff14" stroke-width="16" />
+  
+  <!-- Gráfico de barras (5 barras ascendentes) -->
   <g fill="#ffffff">
-    <rect x="62" y="82" width="20" height="50" rx="4" />
-    <rect x="88" y="70" width="20" height="62" rx="4" />
-    <rect x="114" y="58" width="20" height="74" rx="4" />
-    <path d="M134 58c9 9 18 18 27 27l-9 9-12-12v42h-18V58h12z" />
-    <path d="M69 128h62v12H69z" />
-    <text x="100" y="150" font-family="'Montserrat', 'Arial', sans-serif" font-weight="700" font-size="18" text-anchor="middle" letter-spacing="2">
-      FATOS
-    </text>
-    <text x="100" y="172" font-family="'Montserrat', 'Arial', sans-serif" font-weight="700" font-size="18" text-anchor="middle" letter-spacing="1.5">
-      DA BOLSA
-    </text>
+    <!-- Barra 1 (mais baixa) -->
+    <rect x="42" y="80" width="16" height="35" />
+    
+    <!-- Barra 2 -->
+    <rect x="62" y="68" width="16" height="47" />
+    
+    <!-- Barra 3 -->
+    <rect x="82" y="56" width="16" height="59" />
+    
+    <!-- Barra 4 -->
+    <rect x="102" y="44" width="16" height="71" />
+    
+    <!-- Barra 5 (mais alta) -->
+    <rect x="122" y="32" width="16" height="83" />
+    
+    <!-- Linha de base do gráfico -->
+    <rect x="38" y="115" width="108" height="6" />
   </g>
+  
+  <!-- Seta curva de crescimento -->
+  <path d="M 35 90 Q 70 60, 105 40 L 115 30 M 115 30 L 105 35 M 115 30 L 120 40" 
+        stroke="#ffffff" 
+        stroke-width="8" 
+        stroke-linecap="round" 
+        stroke-linejoin="round"
+        fill="none" />
+  
+  <!-- Texto "FATOS" -->
+  <text x="100" y="145" 
+        font-family="'Arial Black', 'Arial', sans-serif" 
+        font-weight="900" 
+        font-size="32" 
+        text-anchor="middle" 
+        letter-spacing="2"
+        fill="#ffffff">
+    FATOS
+  </text>
+  
+  <!-- Texto "DA BOLSA" -->
+  <text x="100" y="180" 
+        font-family="'Arial Black', 'Arial', sans-serif" 
+        font-weight="900" 
+        font-size="32" 
+        text-anchor="middle" 
+        letter-spacing="2"
+        fill="#ffffff">
+    DA BOLSA
+  </text>
 </svg>
