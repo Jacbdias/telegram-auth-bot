@@ -46,6 +46,12 @@ async function generateInviteLinksForUser(telegramId, channels) {
   let message = '';
 
   for (const channel of channels) {
+    if (!channel.chat_id) {
+      console.warn(`Canal sem chat_id configurado: ${channel.name}`);
+      message += `• ${channel.name}\n  ⚠️ Canal sem chat_id configurado. Contate o suporte.\n\n`;
+      continue;
+    }
+
     try {
       const expireAt = new Date(Date.now() + INVITE_DURATION_HOURS * 60 * 60 * 1000);
       const inviteOptions = {

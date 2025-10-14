@@ -45,6 +45,7 @@ CREATE INDEX idx_authorized_authorized ON authorized_users(authorized);
 CREATE TABLE IF NOT EXISTS channels (
     id SERIAL PRIMARY KEY,
     name VARCHAR(255) NOT NULL,
+    chat_id VARCHAR(50) NOT NULL,
     link VARCHAR(500) NOT NULL,
     description TEXT,
     plan VARCHAR(50) NOT NULL,
@@ -95,8 +96,8 @@ INSERT INTO subscribers (name, email, phone, plan, status) VALUES
 ('Pedro Oliveira', 'pedro@email.com', '11977777777', 'vip', 'active');
 
 -- Exemplo de canais (SUBSTITUA pelos seus links reais do Telegram!)
-INSERT INTO channels (name, link, description, plan, order_index, active) VALUES
-('Canal de Anúncios', 'https://t.me/+XXXXXXXXXXXXX', 'Novidades e avisos gerais', 'all', 1, true),
-('Análises Diárias', 'https://t.me/+YYYYYYYYYYYYYY', 'Análises do mercado', 'basico', 2, true),
-('Sinais Premium', 'https://t.me/+AAAAAAAAAAAAAA', 'Sinais em tempo real', 'premium', 3, true),
-('Sala VIP Exclusiva', 'https://t.me/+DDDDDDDDDDDDDD', 'Acesso total aos traders', 'vip', 4, true);
+INSERT INTO channels (name, chat_id, link, description, plan, order_index, active) VALUES
+('Canal de Anúncios', '-1000000000001', 'https://t.me/+XXXXXXXXXXXXX', 'Novidades e avisos gerais', 'all', 1, true),
+('Análises Diárias', '-1000000000002', 'https://t.me/+YYYYYYYYYYYYYY', 'Análises do mercado', 'basico', 2, true),
+('Sinais Premium', '-1000000000003', 'https://t.me/+AAAAAAAAAAAAAA', 'Sinais em tempo real', 'premium', 3, true),
+('Sala VIP Exclusiva', '-1000000000004', 'https://t.me/+DDDDDDDDDDDDDD', 'Acesso total aos traders', 'vip', 4, true);

@@ -16,6 +16,11 @@ async function ensureSchema() {
   try {
     await pool.query(
       `ALTER TABLE channels
+       ADD COLUMN IF NOT EXISTS chat_id VARCHAR(50)`
+    );
+
+    await pool.query(
+      `ALTER TABLE channels
        ADD COLUMN IF NOT EXISTS creates_join_request BOOLEAN NOT NULL DEFAULT false`
     );
 
