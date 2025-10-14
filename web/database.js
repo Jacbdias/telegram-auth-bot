@@ -8,6 +8,27 @@ const pool = new Pool({
   }
 });
 
+async function ensureSchema() {
+  if (!process.env.DATABASE_URL) {
+    return;
+  }
+
+  try {
+    await pool.query(
+      `ALTER TABLE channels
+       ADD COLUMN IF NOT EXISTS creates_join_request BOOLEAN NOT NULL DEFAULT false`
+    );
+  } catch (error) {
+    console.error('Erro ao garantir coluna creates_join_request:', error);
+    throw error;
+  }
+}
+
+const schemaReady = ensureSchema().catch((error) => {
+  console.error('Falha ao aplicar migrações iniciais:', error);
+  throw error;
+});
+
 // Helper para normalizar telefone
 function normalizePhone(phone) {
   if (!phone) return '';
@@ -258,10 +279,11 @@ async function authorizeUser(telegramId, subscriber) {
 // Busca canais por plano
 async function getUserChannels(plan) {
   try {
+    await schemaReady;
     const result = await pool.query(
-      `SELECT id, name, chat_id, description, plan
+      `SELECT id, name, chat_id, description, plan, order_index, active, creates_join_request
        FROM channels
-       WHERE plan = $1 OR plan = 'all'
+       WHERE (plan = $1 OR plan = 'all') AND active = true
        ORDER BY order_index ASC`,
       [plan]
     );
@@ -599,6 +621,7 @@ async function updateSubscriber(id, name, email, phone, plan, status) {
 // Listar todos os canais
 async function getAllChannels() {
   try {
+    await schemaReady;
     const result = await pool.query(
       'SELECT * FROM channels ORDER BY plan, order_index'
     );
@@ -610,13 +633,14 @@ async function getAllChannels() {
 }
 
 // Criar novo canal
-async function createChannel(name, chat_id, description, plan, order_index) {
+async function createChannel(name, chat_id, description, plan, order_index, creates_join_request = false) {
   try {
+    await schemaReady;
     const result = await pool.query(
-      `INSERT INTO channels (name, chat_id, description, plan, order_index, active)
-       VALUES ($1, $2, $3, $4, $5, true)
+      `INSERT INTO channels (name, chat_id, description, plan, order_index, active, creates_join_request)
+       VALUES ($1, $2, $3, $4, $5, true, $6)
        RETURNING *`,
-      [name, chat_id, description, plan, order_index || 0]
+      [name, chat_id, description, plan, order_index || 0, creates_join_request]
     );
     return result.rows[0];
   } catch (error) {
@@ -626,13 +650,14 @@ async function createChannel(name, chat_id, description, plan, order_index) {
 }
 
 // Atualizar canal
-async function updateChannel(id, name, chat_id, description, plan, order_index, active) {
+async function updateChannel(id, name, chat_id, description, plan, order_index, active, creates_join_request = false) {
   try {
+    await schemaReady;
     await pool.query(
-      `UPDATE channels 
-       SET name = $1, chat_id = $2, description = $3, plan = $4, order_index = $5, active = $6, updated_at = NOW()
-       WHERE id = $7`,
-      [name, chat_id, description, plan, order_index, active, id]
+      `UPDATE channels
+       SET name = $1, chat_id = $2, description = $3, plan = $4, order_index = $5, active = $6, creates_join_request = $7, updated_at = NOW()
+       WHERE id = $8`,
+      [name, chat_id, description, plan, order_index, active, creates_join_request, id]
     );
     return true;
   } catch (error) {
