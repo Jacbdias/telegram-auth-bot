@@ -58,6 +58,20 @@ CREATE TABLE IF NOT EXISTS channels (
 CREATE INDEX idx_channels_plan ON channels(plan);
 CREATE INDEX idx_channels_active ON channels(active);
 
+-- Tabela que armazena os convites gerados para cada usuário
+CREATE TABLE IF NOT EXISTS user_invite_links (
+    id SERIAL PRIMARY KEY,
+    telegram_id VARCHAR(50) NOT NULL,
+    channel_id INTEGER NOT NULL REFERENCES channels(id) ON DELETE CASCADE,
+    invite_link TEXT NOT NULL,
+    expire_at TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    revoked_at TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_invite_links_telegram ON user_invite_links(telegram_id);
+
+
 -- Tabela de logs de autorização
 CREATE TABLE IF NOT EXISTS authorization_logs (
     id SERIAL PRIMARY KEY,

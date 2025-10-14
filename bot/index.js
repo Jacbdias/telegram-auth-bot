@@ -8,6 +8,73 @@ const supportUsername = process.env.SUPPORT_USERNAME || '@suportefatosdabolsa';
 
 const bot = new TelegramBot(token, { polling: true });
 
+const INVITE_DURATION_HOURS = 72;
+const INVITE_MEMBER_LIMIT = 1;
+
+async function revokeExistingInvites(telegramId) {
+  try {
+    const telegramIdStr = telegramId.toString();
+    const activeInvites = await db.getActiveInviteLinksByTelegramId(telegramIdStr);
+
+    if (activeInvites.length === 0) {
+      return;
+    }
+
+    const revokedIds = [];
+
+    for (const invite of activeInvites) {
+      try {
+        await bot.revokeChatInviteLink(invite.chat_id, invite.invite_link);
+        revokedIds.push(invite.id);
+      } catch (error) {
+        console.error(`Erro ao revogar link ${invite.invite_link}:`, error.message);
+      }
+
+      await new Promise(resolve => setTimeout(resolve, 300));
+    }
+
+    if (revokedIds.length > 0) {
+      await db.markInviteLinksRevoked(revokedIds);
+    }
+  } catch (error) {
+    console.error('Erro ao revogar convites existentes:', error.message);
+  }
+}
+
+async function generateInviteLinksForUser(telegramId, channels) {
+  const telegramIdStr = telegramId.toString();
+  let message = '';
+
+  for (const channel of channels) {
+    try {
+      const expireAt = new Date(Date.now() + INVITE_DURATION_HOURS * 60 * 60 * 1000);
+      const inviteOptions = {
+        member_limit: INVITE_MEMBER_LIMIT,
+        expire_date: Math.floor(expireAt.getTime() / 1000)
+      };
+
+      if (channel.creates_join_request) {
+        inviteOptions.creates_join_request = true;
+      }
+
+      const inviteLink = await bot.createChatInviteLink(channel.chat_id, inviteOptions);
+
+      await db.saveUserInviteLink(telegramIdStr, channel.id, inviteLink.invite_link, expireAt);
+
+      console.log(`✅ Link criado para: ${channel.name}`);
+
+      message += `• ${channel.name}\n  ${inviteLink.invite_link}\n\n`;
+    } catch (error) {
+      console.error(`Erro ao criar link para ${channel.name}:`, error.message);
+      message += `• ${channel.name}\n  ⚠️ Erro ao gerar link\n\n`;
+    }
+
+    await new Promise(resolve => setTimeout(resolve, 500));
+  }
+
+  return message;
+}
+
 // Armazena tokens temporários (em produção, use Redis)
 const verificationTokens = new Map();
 
@@ -97,40 +164,21 @@ bot.onText(/\/meuscanais/, async (msg) => {
   }
 
   const channels = await db.getUserChannels(user.plan);
-  
+
   if (channels.length === 0) {
-    return bot.sendMessage(chatId, 
+    return bot.sendMessage(chatId,
       '⚠️ Nenhum canal disponível para seu plano.\n\n' +
       `Entre em contato com o suporte: ${supportUsername}`
     );
   }
 
+  await revokeExistingInvites(chatId);
+
   let message = `✅ *Seus Canais* (Plano: ${user.plan})\n\n`;
-  
-  // Gera novos links de convite únicos
-  for (const channel of channels) {
-    try {
-      const inviteOptions = {
-        member_limit: 1,
-        expire_date: Math.floor(Date.now() / 1000) + (72 * 60 * 60) // 72 horas
-      };
 
-      if (channel.creates_join_request) {
-        inviteOptions.creates_join_request = true;
-      }
+  message += await generateInviteLinksForUser(chatId, channels);
 
-      const inviteLink = await bot.createChatInviteLink(channel.chat_id, inviteOptions);
-      
-      message += `• ${channel.name}\n  ${inviteLink.invite_link}\n\n`;
-    } catch (error) {
-      console.error(`Erro ao criar link para ${channel.name}:`, error.message);
-      message += `• ${channel.name}\n  ⚠️ Erro ao gerar link\n\n`;
-    }
-    
-    await new Promise(resolve => setTimeout(resolve, 500));
-  }
-
-  message += `\n💡 Links de uso único que expiram em 72h.`;
+  message += `\n💡 Links de uso único que expiram em ${INVITE_DURATION_HOURS}h.`;
 
   bot.sendMessage(chatId, message, { parse_mode: 'Markdown' });
 });
@@ -138,44 +186,21 @@ bot.onText(/\/meuscanais/, async (msg) => {
 // Função chamada quando verificação é bem-sucedida
 async function notifyUserAuthorized(telegramId, userData) {
   const channels = await db.getUserChannels(userData.plan);
-  
-  let message = 
+
+  await revokeExistingInvites(telegramId);
+
+  let message =
     `✅ *Verificação Concluída com Sucesso!*\n\n` +
     `Bem-vindo(a), ${userData.name}!\n\n` +
     `📋 *Seu Plano:* ${userData.plan}\n\n` +
     `🔗 *Clique nos links abaixo para entrar nos grupos:*\n\n`;
-  
-  // Gera links de convite únicos para cada canal
-  for (const channel of channels) {
-    try {
-      // Cria link de convite de uso único
-      const inviteOptions = {
-        member_limit: 1,
-        expire_date: Math.floor(Date.now() / 1000) + (72 * 60 * 60) // 72 horas
-      };
 
-      if (channel.creates_join_request) {
-        inviteOptions.creates_join_request = true;
-      }
+  message += await generateInviteLinksForUser(telegramId, channels);
 
-      const inviteLink = await bot.createChatInviteLink(channel.chat_id, inviteOptions);
-      
-      message += `• ${channel.name}\n  ${inviteLink.invite_link}\n\n`;
-      console.log(`✅ Link criado para: ${channel.name}`);
-      
-    } catch (error) {
-      console.error(`❌ Erro ao criar link para ${channel.name}:`, error.message);
-      message += `• ${channel.name}\n  ⚠️ Entre em contato com o suporte\n\n`;
-    }
-    
-    // Aguarda 500ms entre cada link
-    await new Promise(resolve => setTimeout(resolve, 500));
-  }
-  
-  message += 
+  message +=
     `\n⚠️ *IMPORTANTE:*\n` +
     `• Estes links são de uso único\n` +
-    `• Expiram em 72 horas\n` +
+    `• Expiram em ${INVITE_DURATION_HOURS} horas\n` +
     `• Não compartilhe com outras pessoas\n\n` +
     `💡 Use /meuscanais para solicitar novos links se necessário.`;
 
@@ -242,6 +267,8 @@ const adminIds = ['1839742847']; // Seu Telegram ID
     const authorizedUser = await db.getUserBySubscriberId(subscriber.id);
     
     if (authorizedUser && authorizedUser.telegram_id) {
+      await revokeExistingInvites(authorizedUser.telegram_id);
+
       // Tenta remover de todos os canais
       const channels = await db.getUserChannels(subscriber.plan);
       let removedCount = 0;
@@ -365,6 +392,8 @@ bot.onText(/\/sync/, async (msg) => {
     let removedCount = 0;
 
     for (const user of inactiveUsers) {
+      await revokeExistingInvites(user.telegram_id);
+
       for (const channel of allChannels) {
         try {
           await bot.banChatMember(channel.chat_id, user.telegram_id);
