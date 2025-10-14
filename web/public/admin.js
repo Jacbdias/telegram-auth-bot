@@ -351,23 +351,28 @@ async function loadChannels() {
                         <th>Chat ID</th>
                         <th>Plano</th>
                         <th>Ordem</th>
+                        <th>Pedido de entrada</th>
                         <th>Status</th>
                         <th>Ações</th>
                     </tr>
                 </thead>
                 <tbody>
         `;
-        
+
         channels.forEach(channel => {
             const statusBadge = channel.active ? 'badge-success' : 'badge-danger';
             const statusText = channel.active ? 'Ativo' : 'Inativo';
-            
+            const joinRequestEnabled = Boolean(channel.creates_join_request);
+            const joinRequestBadge = joinRequestEnabled ? 'badge-warning' : 'badge-info';
+            const joinRequestText = joinRequestEnabled ? 'Sim' : 'Não';
+
             html += `
                 <tr>
                     <td data-label="Nome">${channel.name}</td>
                     <td data-label="Chat ID"><code>${channel.chat_id}</code></td>
                     <td data-label="Plano">${channel.plan}</td>
                     <td data-label="Ordem">${channel.order_index}</td>
+                    <td data-label="Pedido de entrada"><span class="badge ${joinRequestBadge}">${joinRequestText}</span></td>
                     <td data-label="Status"><span class="badge ${statusBadge}">${statusText}</span></td>
                     <td class="actions" data-label="Ações">
                         <button class="btn-small btn-edit" onclick="editChannel(${channel.id})">Editar</button>
@@ -409,6 +414,7 @@ function renderBroadcastChannelList(channels) {
         const isActive = Boolean(channel.active);
         const badgeClass = isActive ? 'badge-success' : 'badge-danger';
         const statusLabel = isActive ? 'Ativo' : 'Inativo';
+        const joinRequestLabel = channel.creates_join_request ? 'Solicita aprovação' : 'Entrada direta';
 
         html += `
             <label class="checkbox-item ${isActive ? '' : 'disabled'}">
@@ -418,6 +424,7 @@ function renderBroadcastChannelList(channels) {
                     <div class="checkbox-subtitle">
                         <span class="badge ${badgeClass}">${statusLabel}</span>
                         <span>${escapeHtml(channel.plan || 'Sem plano')}</span>
+                        <span>${joinRequestLabel}</span>
                     </div>
                     <div class="checkbox-meta"><code>${escapeHtml(channel.chat_id)}</code></div>
                 </div>
@@ -647,6 +654,7 @@ function openAddChannelModal() {
     document.getElementById('channelId').value = '';
     document.getElementById('channelOrder').value = '0';
     document.getElementById('channelActive').value = 'true';
+    document.getElementById('channelJoinRequest').checked = false;
     document.getElementById('channelModal').classList.add('active');
 }
 
@@ -669,7 +677,8 @@ async function editChannel(id) {
         document.getElementById('channelPlan').value = channel.plan;
         document.getElementById('channelOrder').value = channel.order_index;
         document.getElementById('channelActive').value = channel.active.toString();
-        
+        document.getElementById('channelJoinRequest').checked = Boolean(channel.creates_join_request);
+
         document.getElementById('channelModal').classList.add('active');
     } catch (error) {
         alert('Erro ao carregar canal');
@@ -690,7 +699,8 @@ document.getElementById('channelForm').addEventListener('submit', async (e) => {
         description: document.getElementById('channelDescription').value,
         plan: document.getElementById('channelPlan').value,
         order_index: parseInt(document.getElementById('channelOrder').value),
-        active: document.getElementById('channelActive').value === 'true'
+        active: document.getElementById('channelActive').value === 'true',
+        creates_join_request: document.getElementById('channelJoinRequest').checked
     };
     
     try {

@@ -52,6 +52,23 @@ function createAdminRouter({ db = defaultDb, passwords = passwordUtils } = {}) {
     jacbdias: process.env.JACBDIAS_ADMIN_PASSWORD || 'suaSenhaForte123'
   };
 
+  const parseBoolean = (value) => {
+    if (typeof value === 'boolean') {
+      return value;
+    }
+
+    if (typeof value === 'number') {
+      return value !== 0;
+    }
+
+    if (typeof value === 'string') {
+      const normalized = value.trim().toLowerCase();
+      return ['true', '1', 'yes', 'on'].includes(normalized);
+    }
+
+    return false;
+  };
+
   async function ensureFallbackAdmin(username, password) {
     const existing = await db.getAdminUserByUsername(username);
 
@@ -361,8 +378,16 @@ function createAdminRouter({ db = defaultDb, passwords = passwordUtils } = {}) {
   // Criar novo canal
   router.post('/channels', adminAuth, async (req, res) => {
     try {
-      const { name, chat_id, description, plan, order_index } = req.body;
-      const result = await db.createChannel(name, chat_id, description, plan, order_index);
+      const { name, chat_id, description, plan, order_index, creates_join_request } = req.body;
+      const joinRequest = parseBoolean(creates_join_request);
+      const result = await db.createChannel(
+        name,
+        chat_id,
+        description,
+        plan,
+        order_index,
+        joinRequest
+      );
       res.json({ success: true, channel: result });
     } catch (error) {
       res.status(500).json({ error: error.message });
@@ -372,8 +397,19 @@ function createAdminRouter({ db = defaultDb, passwords = passwordUtils } = {}) {
   // Atualizar canal
   router.put('/channels/:id', adminAuth, async (req, res) => {
     try {
-      const { name, chat_id, description, plan, order_index, active } = req.body;
-      await db.updateChannel(req.params.id, name, chat_id, description, plan, order_index, active);
+      const { name, chat_id, description, plan, order_index, active, creates_join_request } = req.body;
+      const joinRequest = parseBoolean(creates_join_request);
+      const isActive = parseBoolean(active);
+      await db.updateChannel(
+        req.params.id,
+        name,
+        chat_id,
+        description,
+        plan,
+        order_index,
+        isActive,
+        joinRequest
+      );
       res.json({ success: true });
     } catch (error) {
       res.status(500).json({ error: error.message });
