@@ -43,9 +43,10 @@ app.get('/verify', (req, res) => {
 app.post('/api/verify', async (req, res) => {
   const { token, email, phone } = req.body;
   const sanitizedEmail = typeof email === 'string' ? email.trim() : '';
+  const sanitizedPhone = typeof phone === 'string' ? phone : '';
 
   // Validação básica
-  if (!token || !sanitizedEmail || !phone) {
+  if (!token || !sanitizedEmail || !sanitizedPhone) {
     return res.status(400).json({ 
       success: false, 
       message: 'Preencha todos os campos obrigatórios' 
@@ -62,7 +63,7 @@ app.post('/api/verify', async (req, res) => {
   }
 
   // Normaliza telefone removendo caracteres não numéricos
-  const phoneClean = phone.replace(/\D/g, '');
+  const phoneClean = sanitizedPhone.replace(/\D/g, '');
   // Permite telefones internacionais com tamanho variável
   if (phoneClean.length < 6) {
     return res.status(400).json({
