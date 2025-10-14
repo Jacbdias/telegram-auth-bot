@@ -14,6 +14,12 @@ function normalizePhone(phone) {
   return phone.replace(/\D/g, '');
 }
 
+// Helper para normalizar email
+function normalizeEmail(email) {
+  if (!email) return '';
+  return email.trim().toLowerCase();
+}
+
 // ============== ADMIN USERS ==============
 
 // Busca admin por username
@@ -127,13 +133,16 @@ async function countAdminUsers() {
 // Busca assinante por email e telefone
 async function getSubscriberByEmailAndPhone(email, phone) {
   try {
+    const normalizedEmail = normalizeEmail(email);
+    const normalizedPhone = normalizePhone(phone);
+
     const result = await pool.query(
       `SELECT id, name, email, phone, plan, status
        FROM subscribers
-       WHERE email = $1
+       WHERE LOWER(TRIM(email)) = $1
          AND REGEXP_REPLACE(phone, '[^0-9]', '', 'g') = $2
          AND status = 'active'`,
-      [email, phone]
+      [normalizedEmail, normalizedPhone]
     );
 
     return result.rows.length > 0 ? result.rows[0] : null;
@@ -286,10 +295,10 @@ async function getStats() {
 async function getSubscriberByEmail(email) {
   try {
     const result = await pool.query(
-      `SELECT id, name, email, phone, plan, status 
-       FROM subscribers 
-       WHERE email = $1`,
-      [email]
+      `SELECT id, name, email, phone, plan, status
+       FROM subscribers
+       WHERE LOWER(TRIM(email)) = $1`,
+      [normalizeEmail(email)]
     );
 
     return result.rows.length > 0 ? result.rows[0] : null;
@@ -448,7 +457,7 @@ async function createSubscriber(name, email, phone, plan) {
       `INSERT INTO subscribers (name, email, phone, plan, status)
        VALUES ($1, $2, $3, $4, 'active')
        RETURNING *`,
-      [name, email, normalizePhone(phone), plan]
+      [name?.trim(), normalizeEmail(email), normalizePhone(phone), plan?.trim()]
     );
     return result.rows[0];
   } catch (error) {
@@ -475,7 +484,7 @@ async function updateSubscriber(id, name, email, phone, plan, status) {
       `UPDATE subscribers
        SET name = $1, email = $2, phone = $3, plan = $4, status = $5, updated_at = NOW()
        WHERE id = $6`,
-      [name, email, normalizePhone(phone), plan, status, id]
+      [name?.trim(), normalizeEmail(email), normalizePhone(phone), plan?.trim(), status, id]
     );
     
     // Se mudou para inactive, revoga autorização E REMOVE DOS GRUPOS

@@ -42,9 +42,10 @@ app.get('/verify', (req, res) => {
 // Rota de verificação de dados
 app.post('/api/verify', async (req, res) => {
   const { token, email, phone } = req.body;
+  const sanitizedEmail = typeof email === 'string' ? email.trim() : '';
 
   // Validação básica
-  if (!token || !email || !phone) {
+  if (!token || !sanitizedEmail || !phone) {
     return res.status(400).json({ 
       success: false, 
       message: 'Preencha todos os campos obrigatórios' 
@@ -53,7 +54,7 @@ app.post('/api/verify', async (req, res) => {
 
   // Valida formato do email
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  if (!emailRegex.test(email)) {
+  if (!emailRegex.test(sanitizedEmail)) {
     return res.status(400).json({ 
       success: false, 
       message: 'Email inválido' 
@@ -92,7 +93,7 @@ app.post('/api/verify', async (req, res) => {
 
   try {
     // Verifica no banco de dados
-    const subscriber = await db.getSubscriberByEmailAndPhone(email, phoneClean);
+    const subscriber = await db.getSubscriberByEmailAndPhone(sanitizedEmail, phoneClean);
 
     if (!subscriber) {
       // Incrementa tentativas
