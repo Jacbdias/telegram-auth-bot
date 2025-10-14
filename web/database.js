@@ -18,8 +18,25 @@ async function ensureSchema() {
       `ALTER TABLE channels
        ADD COLUMN IF NOT EXISTS creates_join_request BOOLEAN NOT NULL DEFAULT false`
     );
+
+    await pool.query(
+      `CREATE TABLE IF NOT EXISTS user_invite_links (
+         id SERIAL PRIMARY KEY,
+         telegram_id VARCHAR(50) NOT NULL,
+         channel_id INTEGER NOT NULL REFERENCES channels(id) ON DELETE CASCADE,
+         invite_link TEXT NOT NULL,
+         expire_at TIMESTAMP,
+         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+         revoked_at TIMESTAMP
+       )`
+    );
+
+    await pool.query(
+      `CREATE INDEX IF NOT EXISTS idx_user_invite_links_telegram
+       ON user_invite_links(telegram_id)`
+    );
   } catch (error) {
-    console.error('Erro ao garantir coluna creates_join_request:', error);
+    console.error('Erro ao garantir esquema inicial:', error);
     throw error;
   }
 }
@@ -295,6 +312,74 @@ async function getUserChannels(plan) {
   }
 }
 
+async function saveUserInviteLink(telegramId, channelId, inviteLink, expireAt) {
+  try {
+    await schemaReady;
+    await pool.query(
+      `INSERT INTO user_invite_links (telegram_id, channel_id, invite_link, expire_at)
+       VALUES ($1, $2, $3, $4)`,
+      [telegramId, channelId, inviteLink, expireAt ? new Date(expireAt) : null]
+    );
+  } catch (error) {
+    console.error('Erro ao salvar link de convite:', error);
+    throw error;
+  }
+}
+
+async function getActiveInviteLinksByTelegramId(telegramId) {
+  try {
+    await schemaReady;
+    const result = await pool.query(
+      `SELECT uil.id, uil.invite_link, uil.channel_id, uil.expire_at, c.chat_id
+       FROM user_invite_links uil
+       JOIN channels c ON c.id = uil.channel_id
+       WHERE uil.telegram_id = $1
+         AND uil.revoked_at IS NULL`,
+      [telegramId]
+    );
+
+    return result.rows;
+  } catch (error) {
+    console.error('Erro ao buscar convites ativos:', error);
+    throw error;
+  }
+}
+
+async function markInviteLinksRevoked(ids) {
+  if (!ids || ids.length === 0) {
+    return;
+  }
+
+  const placeholders = ids.map((_, index) => `$${index + 1}`).join(', ');
+
+  try {
+    await pool.query(
+      `UPDATE user_invite_links
+       SET revoked_at = NOW()
+       WHERE id IN (${placeholders})`,
+      ids
+    );
+  } catch (error) {
+    console.error('Erro ao marcar convites como revogados:', error);
+    throw error;
+  }
+}
+
+async function markInviteLinksRevokedByTelegramId(telegramId) {
+  try {
+    await schemaReady;
+    await pool.query(
+      `UPDATE user_invite_links
+       SET revoked_at = NOW()
+       WHERE telegram_id = $1 AND revoked_at IS NULL`,
+      [telegramId]
+    );
+  } catch (error) {
+    console.error('Erro ao revogar convites por usuário:', error);
+    throw error;
+  }
+}
+
 
 // Remove autorização de usuário
 async function revokeAuthorization(telegramId) {
@@ -400,29 +485,53 @@ async function revokeUserAccess(subscriberId) {
     const plan = authorizedUser.rows[0]?.plan;
 
     // Remove dos grupos do Telegram (se tiver telegram_id)
-    if (telegramId && plan) {
+    if (telegramId) {
       try {
         const TelegramBot = require('node-telegram-bot-api');
         const token = process.env.TELEGRAM_BOT_TOKEN;
         const bot = new TelegramBot(token);
-        
-        const allChannels = await getAllChannels();
-        const userChannels = allChannels.filter(
-          ch => ch.plan === plan || ch.plan === 'all'
-        );
-        
-        for (const channel of userChannels) {
-          try {
-            await bot.banChatMember(channel.chat_id, telegramId);
-            await bot.unbanChatMember(channel.chat_id, telegramId);
-            console.log(`✅ Removido do canal: ${channel.name}`);
-            await new Promise(resolve => setTimeout(resolve, 500));
-          } catch (error) {
-            console.log(`⚠️ Erro ao remover do canal ${channel.name}`);
+
+        const activeInvites = await getActiveInviteLinksByTelegramId(telegramId);
+        if (activeInvites.length > 0) {
+          const inviteIds = [];
+
+          for (const invite of activeInvites) {
+            try {
+              await bot.revokeChatInviteLink(invite.chat_id, invite.invite_link);
+              inviteIds.push(invite.id);
+            } catch (error) {
+              console.error(`⚠️ Erro ao revogar convite ${invite.invite_link}:`, error.message);
+            }
+
+            await new Promise(resolve => setTimeout(resolve, 300));
+          }
+
+          if (inviteIds.length > 0) {
+            await markInviteLinksRevoked(inviteIds);
+          }
+        }
+
+        if (plan) {
+          const allChannels = await getAllChannels();
+          const userChannels = allChannels.filter(
+            ch => ch.plan === plan || ch.plan === 'all'
+          );
+
+          for (const channel of userChannels) {
+            try {
+              await bot.banChatMember(channel.chat_id, telegramId);
+              await bot.unbanChatMember(channel.chat_id, telegramId);
+              console.log(`✅ Removido do canal: ${channel.name}`);
+              await new Promise(resolve => setTimeout(resolve, 500));
+            } catch (error) {
+              console.log(`⚠️ Erro ao remover do canal ${channel.name}`);
+            }
           }
         }
       } catch (telegramError) {
         console.error('⚠️ Erro ao remover do Telegram:', telegramError);
+      } finally {
+        await markInviteLinksRevokedByTelegramId(telegramId);
       }
     }
 
@@ -710,6 +819,10 @@ module.exports = {
   getUserBySubscriberId,
   authorizeUser,
   getUserChannels,
+  saveUserInviteLink,
+  getActiveInviteLinksByTelegramId,
+  markInviteLinksRevoked,
+  markInviteLinksRevokedByTelegramId,
   revokeAuthorization,
   revokeUserAccess,
   getAllAuthorizedUsers,
