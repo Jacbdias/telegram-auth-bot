@@ -135,17 +135,52 @@ async function getSubscriberByEmailAndPhone(email, phone) {
   try {
     const normalizedEmail = normalizeEmail(email);
     const normalizedPhone = normalizePhone(phone);
+    const MIN_PHONE_MATCH = 6;
 
     const result = await pool.query(
       `SELECT id, name, email, phone, plan, status
        FROM subscribers
        WHERE LOWER(TRIM(email)) = $1
-         AND REGEXP_REPLACE(phone, '[^0-9]', '', 'g') = $2
          AND status = 'active'`,
-      [normalizedEmail, normalizedPhone]
+      [normalizedEmail]
     );
 
-    return result.rows.length > 0 ? result.rows[0] : null;
+    if (result.rows.length === 0) {
+      return null;
+    }
+
+    const matchesPhone = (storedPhone) => {
+      const cleanedStored = normalizePhone(storedPhone);
+      if (!cleanedStored) {
+        return false;
+      }
+
+      if (cleanedStored === normalizedPhone) {
+        return true;
+      }
+
+      if (cleanedStored.length < MIN_PHONE_MATCH || normalizedPhone.length < MIN_PHONE_MATCH) {
+        return false;
+      }
+
+      if (normalizedPhone.endsWith(cleanedStored)) {
+        return true;
+      }
+
+      if (cleanedStored.endsWith(normalizedPhone)) {
+        return true;
+      }
+
+      return false;
+    };
+
+    for (const subscriber of result.rows) {
+      if (matchesPhone(subscriber.phone)) {
+        return subscriber;
+      }
+    }
+
+    return null;
   } catch (error) {
     console.error('Erro ao buscar assinante:', error);
     throw error;
