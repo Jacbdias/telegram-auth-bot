@@ -2,38 +2,6 @@ const express = require('express');
 const defaultDb = require('./database');
 const passwordUtils = require('./passwords');
 
-// Função auxiliar para remover usuário dos grupos do Telegram
-async function removeUserFromTelegramGroups(telegramId, plan) {
-  try {
-    const TelegramBot = require('node-telegram-bot-api');
-    const token = process.env.TELEGRAM_BOT_TOKEN;
-    const bot = new TelegramBot(token);
-    
-    const allChannels = await defaultDb.getAllChannels();
-    
-    // Filtra canais do plano do usuário
-    const userChannels = allChannels.filter(
-      ch => ch.plan === plan || ch.plan === 'all'
-    );
-    
-    for (const channel of userChannels) {
-      try {
-        await bot.banChatMember(channel.chat_id, telegramId);
-        await bot.unbanChatMember(channel.chat_id, telegramId);
-        console.log(`✅ Removido do canal: ${channel.name}`);
-        await new Promise(resolve => setTimeout(resolve, 500)); // Rate limit
-      } catch (error) {
-        console.log(`⚠️ Não foi possível remover do canal ${channel.name}: ${error.message}`);
-      }
-    }
-    
-    return true;
-  } catch (error) {
-    console.error('Erro ao remover usuário dos grupos:', error);
-    return false;
-  }
-}
-
 function createAdminRouter({ db = defaultDb, passwords = passwordUtils } = {}) {
   const router = express.Router();
   const { hashPassword, verifyPassword } = passwords;
@@ -959,73 +927,52 @@ router.post('/subscribers/import', adminAuth, async (req, res) => {
     try {
       const TelegramBot = require('node-telegram-bot-api');
       const token = process.env.TELEGRAM_BOT_TOKEN;
-      const bot = new TelegramBot(token);
+      const bot = token ? new TelegramBot(token, { polling: false }) : null;
 
-    // Pega todos os usuários inativos que ainda têm autorização
-    const result = await db.pool.query(
-      `SELECT au.telegram_id, s.name, s.email, s.id as subscriber_id
-       FROM authorized_users au
-       JOIN subscribers s ON au.subscriber_id = s.id
-       WHERE s.status = 'inactive' AND au.authorized = true`
-    );
+      // Pega todos os usuários inativos que ainda têm autorização
+      const result = await db.pool.query(
+        `SELECT au.telegram_id, s.name, s.email, s.id as subscriber_id
+         FROM authorized_users au
+         JOIN subscribers s ON au.subscriber_id = s.id
+         WHERE s.status = 'inactive' AND au.authorized = true`
+      );
 
-    const inactiveUsers = result.rows;
+      const inactiveUsers = result.rows;
 
-    if (inactiveUsers.length === 0) {
-      return res.json({
-        success: true,
-        message: 'Nenhum usuário inativo para remover',
-        removed: 0
-      });
-    }
+      if (inactiveUsers.length === 0) {
+        return res.json({
+          success: true,
+          message: 'Nenhum usuário inativo para remover',
+          removed: 0
+        });
+      }
 
-    // Remove de todos os canais
-    const allChannels = await db.getAllChannels();
-    let removedCount = 0;
-    let errors = [];
+      let removedCount = 0;
+      let errors = [];
 
-    for (const user of inactiveUsers) {
-      let removedFromChannels = 0;
-
-      for (const channel of allChannels) {
+      for (const user of inactiveUsers) {
         try {
-          await bot.banChatMember(channel.chat_id, user.telegram_id);
-          await bot.unbanChatMember(channel.chat_id, user.telegram_id);
-          removedFromChannels++;
-          await new Promise(resolve => setTimeout(resolve, 500));
+          await db.revokeAuthorization(user.telegram_id);
+          removedCount++;
         } catch (error) {
-          // Usuário pode já não estar no canal
+          errors.push(`Erro ao revogar ${user.telegram_id}: ${error.message}`);
+          continue;
+        }
+
+        if (bot) {
+          try {
+            await bot.sendMessage(user.telegram_id,
+              `⚠️ *Acesso Revogado*\n\n` +
+              `Não encontramos uma assinatura ativa vinculada à sua conta.\n\n` +
+              `Seu acesso aos canais foi removido.\n\n` +
+              `Entre em contato com o suporte se precisar de ajuda.`,
+              { parse_mode: 'Markdown' }
+            );
+          } catch (error) {
+            // Usuário bloqueou o bot
+          }
         }
       }
-
-      // Marca como desautorizado no banco
-      await db.pool.query(
-        'UPDATE authorized_users SET authorized = false WHERE subscriber_id = $1',
-        [user.subscriber_id]
-      );
-
-      // Registra log
-      await db.pool.query(
-        `INSERT INTO authorization_logs (telegram_id, subscriber_id, action, timestamp)
-         VALUES ($1, $2, 'revoked', NOW())`,
-        [user.telegram_id, user.subscriber_id]
-      );
-
-      // Notifica usuário
-      try {
-        await bot.sendMessage(user.telegram_id,
-          `⚠️ *Acesso Revogado*\n\n` +
-          `Não encontramos uma assinatura ativa vinculada à sua conta.\n\n` +
-          `Seu acesso aos canais foi removido.\n\n` +
-          `Entre em contato com o suporte se precisar de ajuda.`,
-          { parse_mode: 'Markdown' }
-        );
-      } catch (error) {
-        // Usuário bloqueou o bot
-      }
-
-      removedCount++;
-    }
 
       res.json({
         success: true,
