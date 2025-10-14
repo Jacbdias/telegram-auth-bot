@@ -50,6 +50,7 @@ CREATE TABLE IF NOT EXISTS channels (
     plan VARCHAR(50) NOT NULL,
     order_index INTEGER DEFAULT 0,
     active BOOLEAN DEFAULT true,
+    creates_join_request BOOLEAN DEFAULT false,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );

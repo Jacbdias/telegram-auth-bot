@@ -110,10 +110,16 @@ bot.onText(/\/meuscanais/, async (msg) => {
   // Gera novos links de convite únicos
   for (const channel of channels) {
     try {
-      const inviteLink = await bot.createChatInviteLink(channel.chat_id, {
+      const inviteOptions = {
         member_limit: 1,
         expire_date: Math.floor(Date.now() / 1000) + (72 * 60 * 60) // 72 horas
-      });
+      };
+
+      if (channel.creates_join_request) {
+        inviteOptions.creates_join_request = true;
+      }
+
+      const inviteLink = await bot.createChatInviteLink(channel.chat_id, inviteOptions);
       
       message += `• ${channel.name}\n  ${inviteLink.invite_link}\n\n`;
     } catch (error) {
@@ -143,10 +149,16 @@ async function notifyUserAuthorized(telegramId, userData) {
   for (const channel of channels) {
     try {
       // Cria link de convite de uso único
-      const inviteLink = await bot.createChatInviteLink(channel.chat_id, {
+      const inviteOptions = {
         member_limit: 1,
         expire_date: Math.floor(Date.now() / 1000) + (72 * 60 * 60) // 72 horas
-      });
+      };
+
+      if (channel.creates_join_request) {
+        inviteOptions.creates_join_request = true;
+      }
+
+      const inviteLink = await bot.createChatInviteLink(channel.chat_id, inviteOptions);
       
       message += `• ${channel.name}\n  ${inviteLink.invite_link}\n\n`;
       console.log(`✅ Link criado para: ${channel.name}`);
