@@ -1,24 +1,40 @@
 const crypto = require('crypto');
 
+// Suporte para webhook v1.0 (com ponto) e v2.0 (com underline)
 const ACTIVATION_EVENTS = new Set([
   'purchase.approved',
+  'purchase_approved',
   'purchase.completed',
+  'purchase_completed',
   'purchase.finished',
+  'purchase_finished',
   'subscription.approved',
+  'subscription_approved',
   'subscription.renewed',
-  'subscription.reactivated'
+  'subscription_renewed',
+  'subscription.reactivated',
+  'subscription_reactivated'
 ]);
 
 const DEACTIVATION_EVENTS = new Set([
   'purchase.canceled',
+  'purchase_canceled',
   'purchase.cancelled',
+  'purchase_cancelled',
   'purchase.chargeback',
+  'purchase_chargeback',
   'purchase.refunded',
+  'purchase_refunded',
   'subscription.canceled',
+  'subscription_canceled',
   'subscription.cancelled',
+  'subscription_cancelled',
   'subscription.deactivated',
+  'subscription_deactivated',
   'subscription.expired',
-  'subscription.suspended'
+  'subscription_expired',
+  'subscription.suspended',
+  'subscription_suspended'
 ]);
 
 function normalizeString(value) {
