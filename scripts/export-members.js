@@ -137,8 +137,8 @@ async function exportMembers() {
       }
 
       sqlContent += `-- ${member.full_name || member.username}\n`;
-      sqlContent += `INSERT INTO subscribers (name, email, phone, plan, status) VALUES \n`;
-      sqlContent += `  ('${member.full_name.replace(/'/g, "''")}', '${member.username || 'sem-email'}@telegram.user', '00000000000', '${plan}', 'active')\n`;
+      sqlContent += `INSERT INTO subscribers (name, email, phone, plan, status, origin) VALUES \n`;
+      sqlContent += `  ('${member.full_name.replace(/'/g, "''")}', '${member.username || 'sem-email'}@telegram.user', '00000000000', '${plan}', 'active', 'manual')\n`;
       sqlContent += `ON CONFLICT (email) DO NOTHING;\n\n`;
       
       sqlContent += `INSERT INTO authorized_users (telegram_id, subscriber_id, authorized, authorized_at) \n`;

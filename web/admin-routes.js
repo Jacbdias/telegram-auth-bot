@@ -800,9 +800,17 @@ router.post('/subscribers/import', adminAuth, async (req, res) => {
     const csvEmails = new Set(subscribers.map(s => s.email?.toLowerCase().trim()).filter(Boolean));
     
     // 2. Identifica quem deve ser removido (está no banco mas não está no CSV)
-    const subscribersToRemove = currentSubscribers.filter(
-      sub => sub.email && !csvEmails.has(sub.email.toLowerCase().trim())
-    );
+    const subscribersToRemove = currentSubscribers.filter((sub) => {
+      if (!sub.email) {
+        return false;
+      }
+
+      if ((sub.origin || '').toLowerCase() === 'hotmart') {
+        return false;
+      }
+
+      return !csvEmails.has(sub.email.toLowerCase().trim());
+    });
 
     // 3. Processa o CSV (adiciona/atualiza) - SÍNCRONO
     for (const sub of subscribers) {
