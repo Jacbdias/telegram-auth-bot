@@ -552,6 +552,39 @@ async function getStats() {
   }
 }
 
+async function upsertSubscriberFromHotmart({ name, email, phone, plan, status = 'active' }) {
+  const normalizedEmail = normalizeEmail(email);
+
+  if (!normalizedEmail) {
+    throw new Error('Email é obrigatório para sincronizar assinante');
+  }
+
+  const normalizedPhone = normalizePhone(phone);
+  const sanitizedName = name && name.trim() ? name.trim() : normalizedEmail;
+  const sanitizedPlan = plan && plan.trim ? plan.trim() : plan;
+  const sanitizedStatus = status || 'active';
+
+  try {
+    const result = await pool.query(
+      `INSERT INTO subscribers (name, email, phone, plan, status)
+       VALUES ($1, $2, $3, $4, $5)
+       ON CONFLICT (email) DO UPDATE
+         SET name = EXCLUDED.name,
+             phone = EXCLUDED.phone,
+             plan = EXCLUDED.plan,
+             status = EXCLUDED.status,
+             updated_at = NOW()
+       RETURNING id, name, email, phone, plan, status`,
+      [sanitizedName, normalizedEmail, normalizedPhone, sanitizedPlan, sanitizedStatus]
+    );
+
+    return result.rows[0];
+  } catch (error) {
+    console.error('Erro ao sincronizar assinante via Hotmart:', error);
+    throw error;
+  }
+}
+
 // Busca assinante apenas por email
 async function getSubscriberByEmail(email) {
   try {
@@ -566,6 +599,75 @@ async function getSubscriberByEmail(email) {
   } catch (error) {
     console.error('Erro ao buscar assinante por email:', error);
     throw error;
+  }
+}
+
+async function deactivateSubscriberByEmail(email) {
+  const normalizedEmail = normalizeEmail(email);
+
+  if (!normalizedEmail) {
+    return null;
+  }
+
+  const client = await pool.connect();
+
+  try {
+    await client.query('BEGIN');
+
+    const subscriberResult = await client.query(
+      `SELECT id, name, email, phone, plan, status
+       FROM subscribers
+       WHERE LOWER(TRIM(email)) = $1`,
+      [normalizedEmail]
+    );
+
+    if (subscriberResult.rows.length === 0) {
+      await client.query('COMMIT');
+      return null;
+    }
+
+    const subscriber = subscriberResult.rows[0];
+
+    const authorizedResult = await client.query(
+      `SELECT telegram_id
+       FROM authorized_users
+       WHERE subscriber_id = $1`,
+      [subscriber.id]
+    );
+
+    let updatedSubscriber = subscriber;
+
+    if (subscriber.status !== 'inactive') {
+      const updateResult = await client.query(
+        `UPDATE subscribers
+         SET status = 'inactive', updated_at = NOW()
+         WHERE id = $1
+         RETURNING id, name, email, phone, plan, status`,
+        [subscriber.id]
+      );
+
+      updatedSubscriber = updateResult.rows[0];
+    }
+
+    await client.query('COMMIT');
+
+    for (const row of authorizedResult.rows) {
+      if (row.telegram_id) {
+        try {
+          await revokeAuthorization(row.telegram_id);
+        } catch (error) {
+          console.error('Erro ao revogar autorização durante desativação por email:', error);
+        }
+      }
+    }
+
+    return updatedSubscriber;
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('Erro ao desativar assinante por email:', error);
+    throw error;
+  } finally {
+    client.release();
   }
 }
 
@@ -865,6 +967,7 @@ module.exports = {
   countAdminUsers,
   touchAdminLastLogin,
   getSubscriberByEmailAndPhone,
+  upsertSubscriberFromHotmart,
   getSubscriberByEmail,
   getUserByTelegramId,
   getUserBySubscriberId,
@@ -887,5 +990,6 @@ module.exports = {
   createChannel,
   updateChannel,
   deleteChannel,
-  getAuthorizationLogs
+  getAuthorizationLogs,
+  deactivateSubscriberByEmail
 };
