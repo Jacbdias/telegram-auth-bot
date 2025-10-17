@@ -18,6 +18,7 @@ CREATE TABLE IF NOT EXISTS subscribers (
     phone VARCHAR(20) NOT NULL,
     plan VARCHAR(50) NOT NULL,
     status VARCHAR(20) DEFAULT 'active' CHECK (status IN ('active', 'inactive', 'suspended')),
+    origin VARCHAR(20) DEFAULT 'manual' CHECK (origin IN ('manual', 'hotmart')),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -90,10 +91,10 @@ CREATE INDEX idx_logs_action ON authorization_logs(action);
 CREATE INDEX idx_logs_timestamp ON authorization_logs(timestamp);
 
 -- Inserção de dados de exemplo
-INSERT INTO subscribers (name, email, phone, plan, status) VALUES
-('João Silva', 'joao@email.com', '11999999999', 'basico', 'active'),
-('Maria Santos', 'maria@email.com', '11988888888', 'premium', 'active'),
-('Pedro Oliveira', 'pedro@email.com', '11977777777', 'vip', 'active');
+INSERT INTO subscribers (name, email, phone, plan, status, origin) VALUES
+('João Silva', 'joao@email.com', '11999999999', 'basico', 'active', 'manual'),
+('Maria Santos', 'maria@email.com', '11988888888', 'premium', 'active', 'manual'),
+('Pedro Oliveira', 'pedro@email.com', '11977777777', 'vip', 'active', 'manual');
 
 -- Exemplo de canais (SUBSTITUA pelos seus links reais do Telegram!)
 INSERT INTO channels (name, chat_id, link, description, plan, order_index, active) VALUES

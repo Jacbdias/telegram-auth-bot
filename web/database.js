@@ -183,7 +183,7 @@ async function getSubscriberByEmailAndPhone(email, phone) {
     const MIN_PHONE_MATCH = 6;
 
     const result = await pool.query(
-      `SELECT id, name, email, phone, plan, status
+      `SELECT id, name, email, phone, plan, status, origin
        FROM subscribers
        WHERE LOWER(TRIM(email)) = $1
          AND status = 'active'`,
@@ -566,15 +566,16 @@ async function upsertSubscriberFromHotmart({ name, email, phone, plan, status = 
 
   try {
     const result = await pool.query(
-      `INSERT INTO subscribers (name, email, phone, plan, status)
-       VALUES ($1, $2, $3, $4, $5)
+      `INSERT INTO subscribers (name, email, phone, plan, status, origin)
+       VALUES ($1, $2, $3, $4, $5, 'hotmart')
        ON CONFLICT (email) DO UPDATE
          SET name = EXCLUDED.name,
              phone = EXCLUDED.phone,
              plan = EXCLUDED.plan,
              status = EXCLUDED.status,
+             origin = 'hotmart',
              updated_at = NOW()
-       RETURNING id, name, email, phone, plan, status`,
+       RETURNING id, name, email, phone, plan, status, origin`,
       [sanitizedName, normalizedEmail, normalizedPhone, sanitizedPlan, sanitizedStatus]
     );
 
@@ -589,7 +590,7 @@ async function upsertSubscriberFromHotmart({ name, email, phone, plan, status = 
 async function getSubscriberByEmail(email) {
   try {
     const result = await pool.query(
-      `SELECT id, name, email, phone, plan, status
+      `SELECT id, name, email, phone, plan, status, origin
        FROM subscribers
        WHERE LOWER(TRIM(email)) = $1`,
       [normalizeEmail(email)]
@@ -615,7 +616,7 @@ async function deactivateSubscriberByEmail(email) {
     await client.query('BEGIN');
 
     const subscriberResult = await client.query(
-      `SELECT id, name, email, phone, plan, status
+      `SELECT id, name, email, phone, plan, status, origin
        FROM subscribers
        WHERE LOWER(TRIM(email)) = $1`,
       [normalizedEmail]
@@ -642,7 +643,7 @@ async function deactivateSubscriberByEmail(email) {
         `UPDATE subscribers
          SET status = 'inactive', updated_at = NOW()
          WHERE id = $1
-         RETURNING id, name, email, phone, plan, status`,
+         RETURNING id, name, email, phone, plan, status, origin`,
         [subscriber.id]
       );
 
