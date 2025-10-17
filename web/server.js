@@ -3,6 +3,7 @@ const bodyParser = require('body-parser');
 const path = require('path');
 const db = require('./database');
 const { validateToken, consumeToken, notifyUserAuthorized } = require('../bot/index');
+const hotmartWebhook = require('./hotmart-webhook');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -13,6 +14,9 @@ app.use(cors({
   origin: '*',
   credentials: true
 }));
+
+// Webhook Hotmart (usa body raw, precisa vir antes do bodyParser padrão)
+app.use('/api/hotmart/webhook', hotmartWebhook);
 
 // Middleware
 app.use(bodyParser.json({ limit: '15mb' }));
