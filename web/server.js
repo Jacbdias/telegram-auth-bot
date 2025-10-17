@@ -15,6 +15,36 @@ app.use(cors({
   credentials: true
 }));
 
+// ==================== ENDPOINT DE DEBUG (TEMPORÁRIO) ====================
+// Adicione ANTES do webhook normal para debugar
+app.post('/api/hotmart/debug', express.raw({ type: '*/*' }), (req, res) => {
+  const rawBody = Buffer.isBuffer(req.body) ? req.body : Buffer.from(req.body || '');
+  const hottok = req.get('X-Hotmart-Hottok');
+  const hmac = req.get('X-Hotmart-Hmac-SHA256');
+  
+  console.log('==================== 🔍 DEBUG HOTMART ====================');
+  console.log('Hottok recebido:', hottok);
+  console.log('HMAC recebido:', hmac);
+  console.log('Token configurado:', process.env.HOTMART_WEBHOOK_SECRET);
+  console.log('Hottok === Token?', hottok === process.env.HOTMART_WEBHOOK_SECRET);
+  console.log('Headers completos:', JSON.stringify(req.headers, null, 2));
+  console.log('Body (primeiros 500 chars):', rawBody.toString('utf8').substring(0, 500));
+  console.log('==========================================================');
+  
+  res.json({
+    success: true,
+    debug: {
+      hottok_recebido: hottok,
+      hottok_length: hottok?.length,
+      token_esperado_length: process.env.HOTMART_WEBHOOK_SECRET?.length,
+      sao_iguais: hottok === process.env.HOTMART_WEBHOOK_SECRET,
+      primeiros_10_chars_hottok: hottok?.substring(0, 10),
+      primeiros_10_chars_token: process.env.HOTMART_WEBHOOK_SECRET?.substring(0, 10)
+    }
+  });
+});
+// ========================================================================
+
 // Webhook Hotmart (usa body raw, precisa vir antes do bodyParser padrão)
 app.use('/api/hotmart/webhook', hotmartWebhook);
 
