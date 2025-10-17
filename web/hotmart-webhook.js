@@ -19,14 +19,27 @@ router.use(express.raw({ type: '*/*', limit: '2mb' }));
 
 router.post('/', async (req, res) => {
   const rawBody = Buffer.isBuffer(req.body) ? req.body : Buffer.from(req.body || '');
-  const signature = req.get('X-Hotmart-Hmac-SHA256') || req.get('X-Hotmart-Hmac-Sha256');
-
-  if (!verifyHotmartSignature(rawBody, signature, WEBHOOK_SECRET)) {
-    return res.status(401).json({ success: false, message: 'Assinatura inválida' });
+  
+  // CORREÇÃO: Aceitar tanto HMAC quanto Hottok
+  const signature = req.get('X-Hotmart-Hmac-SHA256') || 
+                    req.get('X-Hotmart-Hmac-Sha256') ||
+                    req.get('X-Hotmart-Hottok');
+  
+  // CORREÇÃO: Se for Hottok (webhook v2.0.0), fazer validação simples
+  const hottok = req.get('X-Hotmart-Hottok');
+  if (hottok) {
+    // Validação simples: comparar o Hottok recebido com o configurado
+    if (hottok !== WEBHOOK_SECRET) {
+      return res.status(401).json({ success: false, message: 'Hottok inválido' });
+    }
+  } else {
+    // Validação HMAC (webhook v1.0)
+    if (!verifyHotmartSignature(rawBody, signature, WEBHOOK_SECRET)) {
+      return res.status(401).json({ success: false, message: 'Assinatura inválida' });
+    }
   }
 
   let payload;
-
   try {
     payload = JSON.parse(rawBody.toString('utf8'));
   } catch (error) {
@@ -35,7 +48,6 @@ router.post('/', async (req, res) => {
   }
 
   const eventType = getEventType(payload);
-
   if (!eventType) {
     return res.status(202).json({ success: true, message: 'Evento ignorado: tipo ausente' });
   }
@@ -45,13 +57,11 @@ router.post('/', async (req, res) => {
   }
 
   const subscriberData = extractSubscriberData(payload);
-
   if (!subscriberData.email) {
     return res.status(400).json({ success: false, message: 'Email não encontrado no payload' });
   }
 
   const plan = resolvePlanFromMapping(PLAN_MAPPING, subscriberData, DEFAULT_PLAN);
-
   if (!plan) {
     return res.status(422).json({ success: false, message: 'Plano não configurado para o evento recebido' });
   }
@@ -65,7 +75,6 @@ router.post('/', async (req, res) => {
         plan,
         status: 'active'
       });
-
       return res.json({ success: true, action: 'activated', subscriberId: record?.id || null, plan });
     }
 
