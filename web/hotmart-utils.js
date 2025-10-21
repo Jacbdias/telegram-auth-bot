@@ -75,6 +75,19 @@ function extractPhone(source = {}) {
     return '';
   }
 
+  // ✅ CORREÇÃO: Suporte para webhook v2.0 da Hotmart
+  // Os campos checkout_phone_code e checkout_phone são usados no webhook v2.0
+  if (source.checkout_phone || source.checkout_phone_code) {
+    const code = String(source.checkout_phone_code || '').replace(/\D/g, '');
+    const number = String(source.checkout_phone || '').replace(/\D/g, '');
+    
+    if (number) {
+      // Se tiver código, concatena; senão retorna só o número
+      return code ? `${code}${number}` : number;
+    }
+  }
+
+  // Código original para outros formatos (webhook v1.0 e outras variações)
   if (typeof source.phone === 'string') {
     return source.phone;
   }
