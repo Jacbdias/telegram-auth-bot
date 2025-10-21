@@ -25,6 +25,22 @@ async function ensureSchema() {
     );
 
     await pool.query(
+      `ALTER TABLE subscribers
+       ADD COLUMN IF NOT EXISTS origin VARCHAR(20) DEFAULT 'manual'`
+    );
+
+    await pool.query(
+      `ALTER TABLE subscribers
+       ALTER COLUMN origin SET DEFAULT 'manual'`
+    );
+
+    await pool.query(
+      `UPDATE subscribers
+       SET origin = 'manual'
+       WHERE origin IS NULL`
+    );
+
+    await pool.query(
       `CREATE TABLE IF NOT EXISTS user_invite_links (
          id SERIAL PRIMARY KEY,
          telegram_id VARCHAR(50) NOT NULL,
