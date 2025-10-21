@@ -51,6 +51,39 @@ test('extractSubscriberData captura campos básicos do payload', () => {
   assert.equal(result.planName, 'Plano VIP');
 });
 
+test('extractSubscriberData usa telefone do purchase.customer quando subscriber não tem telefone', () => {
+  const payload = {
+    event: 'subscription.approved',
+    data: {
+      subscriber: {
+        email: 'assinante@dominio.com',
+        name: 'Assinante Hotmart'
+      },
+      subscription: {
+        plan: { name: 'Plano Premium' },
+        subscriber: {
+          email: 'assinante@dominio.com',
+          name: 'Assinante Hotmart'
+        }
+      },
+      purchase: {
+        customer: {
+          checkout_phone_country_code: '+55',
+          checkout_phone_area_code: '11',
+          checkout_phone_number: '99876-5432'
+        }
+      }
+    }
+  };
+
+  const result = extractSubscriberData(payload);
+
+  assert.equal(result.email, 'assinante@dominio.com');
+  assert.equal(result.name, 'Assinante Hotmart');
+  assert.equal(result.planName, 'Plano Premium');
+  assert.equal(result.phone, '5511998765432');
+});
+
 test('resolvePlanFromMapping prioriza código da oferta e fallback para padrão', () => {
   const mapping = {
     of123: 'vip',
