@@ -75,32 +75,25 @@ function extractPhone(source = {}) {
     return '';
   }
 
-  const normalizeNumber = (value) => String(value || '').replace(/\D/g, '');
-
   // ✅ CORREÇÃO: Suporte para webhook v2.0 da Hotmart
-  // Os campos checkout_phone_code e checkout_phone são usados no webhook v2.0
+  // IMPORTANTE: O Hotmart às vezes envia o número JÁ com o DDD incluído em checkout_phone
   if (source.checkout_phone || source.checkout_phone_code) {
-    const code = normalizeNumber(source.checkout_phone_code);
-    const number = normalizeNumber(source.checkout_phone);
-
+    const code = String(source.checkout_phone_code || '').replace(/\D/g, '');
+    const number = String(source.checkout_phone || '').replace(/\D/g, '');
+    
     if (number) {
-      return code ? `${code}${number}` : number;
-    }
-  }
-
-  // ✅ NOVO: Alguns payloads trazem os campos fragmentados (country/area/number)
-  const checkoutFragments = [
-    normalizeNumber(source.checkout_phone_country_code || source.checkout_country_code),
-    normalizeNumber(source.checkout_phone_area_code || source.checkout_area_code),
-    normalizeNumber(source.checkout_phone_number || source.checkout_phone_local || source.checkout_phone_local_code),
-    normalizeNumber(source.checkout_phone_local_number),
-    normalizeNumber(source.checkout_phone)
-  ].filter(Boolean);
-
-  if (checkoutFragments.length > 0) {
-    const number = checkoutFragments.join('');
-    if (number) {
-      return number;
+      // ⚠️ CORREÇÃO: Verificar se o número já começa com o código
+      // Exemplo: code="67", number="67992998920" -> número já tem o DDD!
+      if (code && number.startsWith(code)) {
+        // Número já tem o DDD, retorna só o número
+        return number;
+      } else if (code) {
+        // Número não tem o DDD, concatena
+        return `${code}${number}`;
+      } else {
+        // Não tem código, retorna só o número
+        return number;
+      }
     }
   }
 
@@ -116,7 +109,7 @@ function extractPhone(source = {}) {
 
     const parts = [source.phone.country_code, source.phone.area_code, source.phone.number, source.phone.phone_number]
       .filter(Boolean)
-      .map((value) => normalizeNumber(value));
+      .map((value) => String(value).replace(/\D/g, ''));
 
     if (parts.length > 0) {
       return parts.join('');
@@ -135,27 +128,8 @@ function extractPhone(source = {}) {
     return source.mobile;
   }
 
-  if (typeof source.whatsapp === 'string') {
-    return source.whatsapp;
-  }
-
-  if (typeof source.whatsapp_number === 'string') {
-    return source.whatsapp_number;
-  }
-
   if (source.contact && typeof source.contact.phone === 'string') {
     return source.contact.phone;
-  }
-
-  return '';
-}
-
-function getFirstNonEmpty(...values) {
-  for (const value of values) {
-    const normalized = normalizeString(value);
-    if (normalized) {
-      return normalized;
-    }
   }
 
   return '';
@@ -164,57 +138,34 @@ function getFirstNonEmpty(...values) {
 function extractSubscriberData(payload = {}) {
   const data = payload.data || payload;
   const purchase = data.purchase || {};
-  const subscription = data.subscription || {};
+  const subscriber = data.subscriber || {};
+  const buyer = data.buyer || data.customer || {};
   const offer = data.offer || {};
   const product = data.product || {};
 
-  const subscriberCandidates = [data.subscriber, subscription.subscriber].filter(Boolean);
-  const buyerCandidates = [
-    data.buyer,
-    data.customer,
-    purchase.buyer,
-    purchase.customer,
-    purchase.payer,
-    subscription.buyer,
-    subscription.customer
-  ].filter(Boolean);
+  const contact = subscriber.email ? subscriber : buyer;
 
-  const allContacts = [...subscriberCandidates, ...buyerCandidates];
-
-  const contactWithEmail = allContacts.find((candidate) => normalizeString(candidate?.email));
-  const fallbackContact = allContacts[0] || {};
-  const contact = contactWithEmail || fallbackContact;
-
-  const email = getFirstNonEmpty(
-    contact?.email,
-    ...subscriberCandidates.map((candidate) => candidate?.email),
-    ...buyerCandidates.map((candidate) => candidate?.email),
-    data.email,
-    payload.email
-  ).toLowerCase();
-
-  const name = getFirstNonEmpty(
-    contact?.name,
-    contact?.full_name,
-    ...allContacts.map((candidate) => candidate?.name),
-    ...allContacts.map((candidate) => candidate?.full_name),
-    data.full_name,
-    data.name,
-    product.name,
-    subscription.plan?.name
+  const email = normalizeString(contact.email || buyer.email || subscriber.email || data.email || payload.email).toLowerCase();
+  const name = normalizeString(
+    contact.name ||
+      contact.full_name ||
+      buyer.name ||
+      subscriber.name ||
+      data.full_name ||
+      data.name ||
+      product.name ||
+      ''
   );
 
-  const phone = getFirstNonEmpty(
-    ...allContacts.map((candidate) => extractPhone(candidate)),
-    extractPhone(data),
-    extractPhone(payload)
+  const phone = normalizeString(
+    extractPhone(contact) || extractPhone(buyer) || extractPhone(subscriber) || extractPhone(data)
   );
 
-  const offerCode = getFirstNonEmpty(offer.code, offer.offer_code, offer.offer_code_hash, purchase.offer_code);
-  const offerId = getFirstNonEmpty(offer.id, offer.offer_id);
-  const productId = getFirstNonEmpty(product.id, product.product_id, purchase.product_id);
-  const productName = getFirstNonEmpty(product.name, purchase.product_name, subscription.plan?.name);
-  const planName = getFirstNonEmpty(data.plan, data.plan_name, offer.name, product.name, subscription.plan?.name);
+  const offerCode = normalizeString(offer.code || offer.offer_code || offer.offer_code_hash || purchase.offer_code);
+  const offerId = normalizeString(offer.id || offer.offer_id);
+  const productId = normalizeString(product.id || product.product_id || purchase.product_id);
+  const productName = normalizeString(product.name || purchase.product_name);
+  const planName = normalizeString(data.plan || data.plan_name || offer.name || product.name);
 
   return {
     email,
