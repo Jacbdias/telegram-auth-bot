@@ -63,6 +63,14 @@ router.post('/', async (req, res) => {
 
   const subscriberData = extractSubscriberData(payload);
 
+  // 🔍 DEBUG: Ver campos de telefone do buyer
+console.log('🔎 CAMPOS DE TELEFONE DO BUYER:');
+console.log('  checkout_phone_code:', payload.data?.buyer?.checkout_phone_code);
+console.log('  checkout_phone:', payload.data?.buyer?.checkout_phone);
+
+// 🔍 DEBUG 4: Dados extraídos (este log já existe)
+console.log('👤 Dados extraídos:', JSON.stringify(subscriberData, null, 2));
+
   // 🔍 DEBUG 4: Dados extraídos
   console.log('👤 Dados extraídos:', JSON.stringify(subscriberData, null, 2));
   console.log('📞 Telefone extraído:', subscriberData.phone || '(VAZIO)');
