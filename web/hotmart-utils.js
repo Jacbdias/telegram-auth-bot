@@ -1,5 +1,13 @@
 const crypto = require('crypto');
 
+// Mapeamentos internos para planos conhecidos que precisam funcionar
+// mesmo que o HOTMART_PLAN_MAP não esteja atualizado em produção.
+const BUILTIN_PLAN_MAPPING = new Map([
+  ['6558190', 'Mentoria Renda Turbinada'],
+  ['renda turbinada', 'Mentoria Renda Turbinada'],
+  ['mentoria renda turbinada', 'Mentoria Renda Turbinada']
+]);
+
 // Suporte para webhook v1.0 (com ponto) e v2.0 (com underline)
 const ACTIVATION_EVENTS = new Set([
   'purchase.approved',
@@ -263,6 +271,24 @@ function normalizePlanMapping(input) {
 function resolvePlanFromMapping(mappingInput, subscriberData = {}, defaultPlan = null) {
   const mapping = normalizePlanMapping(mappingInput);
 
+  const getPlanForKey = (rawKey) => {
+    const key = normalizeString(rawKey).toLowerCase();
+
+    if (!key) {
+      return null;
+    }
+
+    if (mapping[key]) {
+      return mapping[key];
+    }
+
+    if (BUILTIN_PLAN_MAPPING.has(key)) {
+      return BUILTIN_PLAN_MAPPING.get(key);
+    }
+
+    return null;
+  };
+
   const keysToTry = [
     subscriberData.offerCode,
     subscriberData.offerId,
@@ -272,14 +298,19 @@ function resolvePlanFromMapping(mappingInput, subscriberData = {}, defaultPlan =
   ];
 
   for (const rawKey of keysToTry) {
-    const key = normalizeString(rawKey).toLowerCase();
+    const plan = getPlanForKey(rawKey);
 
-    if (key && mapping[key]) {
-      return mapping[key];
+    if (plan) {
+      return plan;
     }
   }
 
   if (subscriberData.planName) {
+    const fallbackPlan = getPlanForKey(subscriberData.planName);
+    if (fallbackPlan) {
+      return fallbackPlan;
+    }
+
     return subscriberData.planName;
   }
 
