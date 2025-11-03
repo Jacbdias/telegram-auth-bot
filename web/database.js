@@ -56,6 +56,33 @@ async function ensureSchema() {
       `CREATE INDEX IF NOT EXISTS idx_user_invite_links_telegram
        ON user_invite_links(telegram_id)`
     );
+
+    const requiredChannels = [
+      {
+        name: 'Mentoria Renda Turbinada',
+        chatId: '-1003268530938',
+        description: 'Canal da Mentoria Renda Turbinada',
+        plan: 'Mentoria Renda Turbinada',
+        orderIndex: 0
+      }
+    ];
+
+    for (const channel of requiredChannels) {
+      await pool.query(
+        `INSERT INTO channels (name, chat_id, description, plan, order_index, active, creates_join_request)
+         SELECT $1, $2, $3, $4, $5, true, false
+         WHERE NOT EXISTS (
+           SELECT 1 FROM channels WHERE chat_id = $2 OR (plan = $4 AND name = $1)
+         )`,
+        [
+          channel.name,
+          channel.chatId,
+          channel.description,
+          channel.plan,
+          channel.orderIndex
+        ]
+      );
+    }
   } catch (error) {
     console.error('Erro ao garantir esquema inicial:', error);
     throw error;
