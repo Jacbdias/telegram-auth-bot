@@ -436,6 +436,7 @@ function downloadTemplate() {
     const template = 'nome,email,telefone,plano,status\n' +
                     'João Silva,joao@email.com,11999999999,CF VIP - FATOS DA BOLSA 1,active\n' +
                     'Maria Santos,maria@email.com,11988888888,CF VIP - FATOS DA BOLSA 2,active\n' +
+                    'Ana Souza,ana@email.com,11966666666,Mentoria Renda Turbinada,active\n' +
                     'Pedro Costa,pedro@email.com,11977777777,Close Friends LITE,active';
     
     const blob = new Blob([template], { type: 'text/csv;charset=utf-8;' });

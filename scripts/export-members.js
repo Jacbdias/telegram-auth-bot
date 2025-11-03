@@ -13,7 +13,8 @@ const groups = [
   { name: 'Milhas', chatId: '-1001662496741', plan: 'Todos VIP' },
   { name: 'Atualizações CF VIP', chatId: '-1001848040585', plan: 'Todos VIP' },
   { name: 'Atualizações CF LITE', chatId: '-1001696501981', plan: 'Close Friends LITE' },
-  { name: 'Projeto Renda Passiva', chatId: '-1002037275118', plan: 'Projeto Renda Passiva' }
+  { name: 'Projeto Renda Passiva', chatId: '-1002037275118', plan: 'Projeto Renda Passiva' },
+  { name: 'Mentoria Renda Turbinada', chatId: '-1003268530938', plan: 'Mentoria Renda Turbinada' }
 ];
 
 async function exportMembers() {
@@ -130,7 +131,9 @@ async function exportMembers() {
       // Determina o plano baseado nos grupos
       let plan = 'CF VIP - FATOS DA BOLSA 1';  // Padrão
       
-      if (member.groups.includes('Projeto Renda Passiva')) {
+      if (member.groups.includes('Mentoria Renda Turbinada')) {
+        plan = 'Mentoria Renda Turbinada';
+      } else if (member.groups.includes('Projeto Renda Passiva')) {
         plan = 'Projeto Renda Passiva';
       } else if (member.groups.includes('Atualizações CF LITE') && member.groups.length === 1) {
         plan = 'Close Friends LITE';
