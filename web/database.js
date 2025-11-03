@@ -1,4 +1,5 @@
 const { Pool } = require('pg');
+const { normalizePhone, phonesMatch } = require('./phone-utils');
 
 // Configuração do pool de conexões PostgreSQL
 const pool = new Pool({
@@ -102,12 +103,6 @@ const schemaReady = ensureSchema().catch((error) => {
   console.error('Falha ao aplicar migrações iniciais:', error);
   throw error;
 });
-
-// Helper para normalizar telefone
-function normalizePhone(phone) {
-  if (!phone) return '';
-  return phone.replace(/\D/g, '');
-}
 
 // Helper para normalizar email
 function normalizeEmail(email) {
@@ -232,7 +227,6 @@ async function getSubscriberByEmailAndPhone(email, phone) {
   try {
     const normalizedEmail = normalizeEmail(email);
     const normalizedPhone = normalizePhone(phone);
-    const MIN_PHONE_MATCH = 6;
 
     const result = await pool.query(
       `SELECT id, name, email, phone, plan, status, origin
@@ -242,37 +236,12 @@ async function getSubscriberByEmailAndPhone(email, phone) {
       [normalizedEmail]
     );
 
-    if (result.rows.length === 0) {
+    if (result.rows.length === 0 || !normalizedPhone) {
       return null;
     }
 
-    const matchesPhone = (storedPhone) => {
-      const cleanedStored = normalizePhone(storedPhone);
-      if (!cleanedStored) {
-        return false;
-      }
-
-      if (cleanedStored === normalizedPhone) {
-        return true;
-      }
-
-      if (cleanedStored.length < MIN_PHONE_MATCH || normalizedPhone.length < MIN_PHONE_MATCH) {
-        return false;
-      }
-
-      if (normalizedPhone.endsWith(cleanedStored)) {
-        return true;
-      }
-
-      if (cleanedStored.endsWith(normalizedPhone)) {
-        return true;
-      }
-
-      return false;
-    };
-
     for (const subscriber of result.rows) {
-      if (matchesPhone(subscriber.phone)) {
+      if (phonesMatch(normalizedPhone, subscriber.phone)) {
         return subscriber;
       }
     }
