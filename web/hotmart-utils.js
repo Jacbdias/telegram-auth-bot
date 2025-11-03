@@ -77,23 +77,41 @@ function extractPhone(source = {}) {
 
   // ✅ CORREÇÃO: Suporte para webhook v2.0 da Hotmart
   // IMPORTANTE: O Hotmart às vezes envia o número JÁ com o DDD incluído em checkout_phone
-  if (source.checkout_phone || source.checkout_phone_code) {
-    const code = String(source.checkout_phone_code || '').replace(/\D/g, '');
-    const number = String(source.checkout_phone || '').replace(/\D/g, '');
-    
+  if (
+    source.checkout_phone ||
+    source.checkout_phone_code ||
+    source.checkout_phone_number ||
+    source.checkout_phone_country_code ||
+    source.checkout_phone_area_code
+  ) {
+    const country = String(source.checkout_phone_country_code || '').replace(/\D/g, '');
+    const area = String(source.checkout_phone_area_code || '').replace(/\D/g, '');
+    const code = String(source.checkout_phone_code || country).replace(/\D/g, '');
+    const number = String(source.checkout_phone || source.checkout_phone_number || '').replace(/\D/g, '');
+
     if (number) {
+      const shouldPrependArea =
+        area && !number.startsWith(area) && !(country && number.startsWith(country));
+      const combinedNumber = shouldPrependArea ? `${area}${number}` : number;
+
       // ⚠️ CORREÇÃO: Verificar se o número já começa com o código
       // Exemplo: code="67", number="67992998920" -> número já tem o DDD!
-      if (code && number.startsWith(code)) {
+      if (code && combinedNumber.startsWith(code)) {
         // Número já tem o DDD, retorna só o número
-        return number;
+        return combinedNumber;
       } else if (code) {
         // Número não tem o DDD, concatena
-        return `${code}${number}`;
+        return `${code}${combinedNumber}`;
       } else {
         // Não tem código, retorna só o número
-        return number;
+        return combinedNumber;
       }
+    }
+
+    const combined = [country || code, area, number].filter(Boolean).join('');
+
+    if (combined) {
+      return combined;
     }
   }
 
@@ -157,15 +175,37 @@ function extractSubscriberData(payload = {}) {
       ''
   );
 
-  const phone = normalizeString(
-    extractPhone(contact) || extractPhone(buyer) || extractPhone(subscriber) || extractPhone(data)
-  );
+  const phoneCandidates = [
+    extractPhone(contact),
+    extractPhone(buyer),
+    extractPhone(subscriber),
+    extractPhone(purchase.customer),
+    extractPhone(purchase),
+    extractPhone(data)
+  ];
+
+  const phone = normalizeString(phoneCandidates.find((value) => normalizeString(value)) || '');
 
   const offerCode = normalizeString(offer.code || offer.offer_code || offer.offer_code_hash || purchase.offer_code);
   const offerId = normalizeString(offer.id || offer.offer_id);
   const productId = normalizeString(product.id || product.product_id || purchase.product_id);
   const productName = normalizeString(product.name || purchase.product_name);
-  const planName = normalizeString(data.plan || data.plan_name || offer.name || product.name);
+  const planCandidates = [
+    data.plan,
+    data.plan_name,
+    offer.name,
+    product.name,
+    purchase.plan?.name,
+    purchase.plan_name,
+    purchase.plan?.plan_name,
+    data.subscription?.plan?.name,
+    data.subscription?.plan_name,
+    data.subscription?.plan?.plan_name
+  ];
+
+  const planName = planCandidates
+    .map((value) => normalizeString(value))
+    .find((value) => value) || '';
 
   return {
     email,
