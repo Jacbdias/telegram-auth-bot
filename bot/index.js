@@ -3,7 +3,8 @@ const crypto = require('crypto');
 const db = require('../web/database');
 
 const token = process.env.TELEGRAM_BOT_TOKEN;
-const webAppUrl = process.env.WEB_APP_URL;
+const rawWebAppUrl = process.env.WEB_APP_URL;
+const webAppUrl = rawWebAppUrl ? rawWebAppUrl.replace(/\/+$/, '') : '';
 const supportUsername = process.env.SUPPORT_USERNAME || '@suportefatosdabolsa';
 
 const bot = new TelegramBot(token, { polling: true });
@@ -142,6 +143,16 @@ bot.on('callback_query', async (query) => {
 
     // Limpa tokens expirados (executa a cada verificação)
     cleanExpiredTokens();
+
+    if (!webAppUrl) {
+      console.error('WEB_APP_URL não está configurada.');
+      bot.sendMessage(chatId,
+        '⚠️ Não foi possível gerar o link de verificação no momento.\n' +
+        `Entre em contato com o suporte: ${supportUsername}`
+      );
+      bot.answerCallbackQuery(query.id);
+      return;
+    }
 
     const verificationUrl = `${webAppUrl}/verify?token=${token}`;
 
