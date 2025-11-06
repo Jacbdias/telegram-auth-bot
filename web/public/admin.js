@@ -1,5 +1,23 @@
 // Configuração
-const API_URL = 'https://telegram-auth-bot-production.up.railway.app/api/admin';
+const DEFAULT_API_BASE = 'https://telegram-auth-bot-production.up.railway.app/api/admin';
+
+function resolveApiUrl() {
+    if (typeof window !== 'undefined') {
+        const override = window.__ADMIN_API_URL__;
+
+        if (typeof override === 'string' && override.trim().length > 0) {
+            return override.trim().replace(/\/$/, '');
+        }
+
+        if (window.location && window.location.origin) {
+            return `${window.location.origin}/api/admin`;
+        }
+    }
+
+    return DEFAULT_API_BASE;
+}
+
+const API_URL = resolveApiUrl();
 let authToken = localStorage.getItem('adminToken') || '';
 let channelsCache = [];
 let subscribersData = [];
