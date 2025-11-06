@@ -1,17 +1,35 @@
 // Configuração
 const DEFAULT_API_BASE = 'https://telegram-auth-bot-production.up.railway.app/api/admin';
 
+function readWindowOverride() {
+    if (typeof window === 'undefined') {
+        return null;
+    }
+
+    const candidates = [
+        window.ADMIN_API_URL_OVERRIDE,
+        // Compatibilidade com possíveis versões anteriores que configuravam essa variável global.
+        window.__ADMIN_API_URL__,
+    ];
+
+    for (const candidate of candidates) {
+        if (typeof candidate === 'string' && candidate.trim().length > 0) {
+            return candidate.trim().replace(/\/$/, '');
+        }
+    }
+
+    return null;
+}
+
 function resolveApiUrl() {
-    if (typeof window !== 'undefined') {
-        const override = window.__ADMIN_API_URL__;
+    const override = readWindowOverride();
 
-        if (typeof override === 'string' && override.trim().length > 0) {
-            return override.trim().replace(/\/$/, '');
-        }
+    if (override) {
+        return override;
+    }
 
-        if (window.location && window.location.origin) {
-            return `${window.location.origin}/api/admin`;
-        }
+    if (typeof window !== 'undefined' && window.location && window.location.origin) {
+        return `${window.location.origin}/api/admin`;
     }
 
     return DEFAULT_API_BASE;
