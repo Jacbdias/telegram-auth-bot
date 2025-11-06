@@ -2,8 +2,15 @@
 const API_URL = 'https://telegram-auth-bot-production.up.railway.app/api/admin';
 let authToken = localStorage.getItem('adminToken') || '';
 let channelsCache = [];
+let subscribersData = [];
 const MAX_BROADCAST_MEDIA_SIZE = 7 * 1024 * 1024; // 7MB
 const BROADCAST_ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+
+if (authToken && !authToken.includes(':')) {
+    localStorage.removeItem('adminToken');
+    localStorage.removeItem('adminUser');
+    authToken = '';
+}
 
 // Verifica se já está logado
 if (authToken) {
@@ -34,27 +41,54 @@ document.getElementById('loginForm').addEventListener('submit', async (e) => {
             authToken = credentials;
             localStorage.setItem('adminToken', credentials);
             localStorage.setItem('adminUser', username);
+            alert.classList.remove('show');
             showDashboard();
         } else {
             alert.textContent = '❌ Usuário ou senha incorretos!';
             alert.classList.add('show');
             setTimeout(() => alert.classList.remove('show'), 3000);
+            localStorage.removeItem('adminToken');
+            localStorage.removeItem('adminUser');
         }
     } catch (error) {
         alert.textContent = '❌ Erro ao conectar ao servidor';
         alert.classList.add('show');
+        localStorage.removeItem('adminToken');
+        localStorage.removeItem('adminUser');
     }
 });
 
 const subscriberSearchInput = document.getElementById('subscriberSearch');
+const subscriberPlanFilter = document.getElementById('subscriberPlanFilter');
+const subscriberStatusFilter = document.getElementById('subscriberStatusFilter');
+const subscriberTelegramFilter = document.getElementById('subscriberTelegramFilter');
+
+function handleSubscriberFiltersChange() {
+    const searchValue = subscriberSearchInput ? subscriberSearchInput.value : '';
+    renderSubscribersTable(searchValue);
+}
+
 if (subscriberSearchInput) {
     subscriberSearchInput.addEventListener('input', (event) => {
         renderSubscribersTable(event.target.value);
     });
 }
 
+if (subscriberPlanFilter) {
+    subscriberPlanFilter.addEventListener('change', handleSubscriberFiltersChange);
+}
+
+if (subscriberStatusFilter) {
+    subscriberStatusFilter.addEventListener('change', handleSubscriberFiltersChange);
+}
+
+if (subscriberTelegramFilter) {
+    subscriberTelegramFilter.addEventListener('change', handleSubscriberFiltersChange);
+}
+
 function logout() {
     localStorage.removeItem('adminToken');
+    localStorage.removeItem('adminUser');
     authToken = '';
     document.getElementById('loginContainer').style.display = 'flex';
     document.getElementById('dashboard').classList.remove('active');
@@ -99,11 +133,24 @@ async function apiRequest(endpoint, method = 'GET', body = null) {
     }
 
     if (!response.ok) {
+        if (response.status === 401) {
+            handleUnauthorized();
+        }
         const message = data && data.error ? data.error : (typeof data === 'string' && data ? data : 'Erro na requisição');
         throw new Error(message);
     }
 
     return data;
+}
+
+function handleUnauthorized() {
+    logout();
+    const alert = document.getElementById('loginAlert');
+    if (alert) {
+        alert.textContent = '⚠️ Sessão expirada. Faça login novamente.';
+        alert.classList.add('show');
+        setTimeout(() => alert.classList.remove('show'), 4000);
+    }
 }
 
 function escapeHtml(value) {
@@ -181,6 +228,7 @@ async function loadStats() {
 async function loadSubscribers() {
     try {
         subscribersData = await apiRequest('/subscribers');
+        populateSubscriberPlanFilter(subscribersData);
         const searchValue = subscriberSearchInput ? subscriberSearchInput.value : '';
         renderSubscribersTable(searchValue);
     } catch (error) {
@@ -195,21 +243,45 @@ function renderSubscribersTable(filter = '') {
     }
 
     const normalizedFilter = filter.trim().toLowerCase();
-    const filteredSubscribers = normalizedFilter
-        ? subscribersData.filter((subscriber) => {
-            const valuesToSearch = [
-                subscriber.name,
-                subscriber.email,
-                subscriber.phone,
-                subscriber.plan,
-                subscriber.status
-            ];
+    const selectedPlan = subscriberPlanFilter ? subscriberPlanFilter.value : '';
+    const selectedStatus = subscriberStatusFilter ? subscriberStatusFilter.value : '';
+    const selectedTelegram = subscriberTelegramFilter ? subscriberTelegramFilter.value : '';
 
-            return valuesToSearch.some((value) =>
-                value && String(value).toLowerCase().includes(normalizedFilter)
-            );
-        })
-        : subscribersData;
+    const filteredSubscribers = subscribersData.filter((subscriber) => {
+        const valuesToSearch = [
+            subscriber.name,
+            subscriber.email,
+            subscriber.phone,
+            subscriber.plan,
+            subscriber.status
+        ];
+
+        const matchesSearch = !normalizedFilter || valuesToSearch.some((value) =>
+            value && String(value).toLowerCase().includes(normalizedFilter)
+        );
+
+        if (!matchesSearch) {
+            return false;
+        }
+
+        if (selectedPlan && subscriber.plan !== selectedPlan) {
+            return false;
+        }
+
+        if (selectedStatus && subscriber.status !== selectedStatus) {
+            return false;
+        }
+
+        if (selectedTelegram === 'authorized' && !subscriber.authorized) {
+            return false;
+        }
+
+        if (selectedTelegram === 'pending' && subscriber.authorized) {
+            return false;
+        }
+
+        return true;
+    });
 
     let html = `
         <table>
@@ -259,6 +331,34 @@ function renderSubscribersTable(filter = '') {
 
     html += '</tbody></table>';
     tableContainer.innerHTML = html;
+}
+
+function populateSubscriberPlanFilter(subscribers) {
+    if (!subscriberPlanFilter) {
+        return;
+    }
+
+    const previousValue = subscriberPlanFilter.value;
+    const planOptions = Array.from(new Set(
+        subscribers
+            .map((subscriber) => subscriber.plan)
+            .filter((plan) => plan && String(plan).trim() !== '')
+    )).sort((a, b) => String(a).localeCompare(String(b), 'pt-BR', { sensitivity: 'base' }));
+
+    subscriberPlanFilter.innerHTML = '<option value="">Todos os planos</option>';
+
+    planOptions.forEach((plan) => {
+        const option = document.createElement('option');
+        option.value = plan;
+        option.textContent = plan;
+        subscriberPlanFilter.appendChild(option);
+    });
+
+    if (previousValue && planOptions.includes(previousValue)) {
+        subscriberPlanFilter.value = previousValue;
+    } else {
+        subscriberPlanFilter.value = '';
+    }
 }
 
 function openAddSubscriberModal() {
