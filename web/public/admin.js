@@ -6,6 +6,12 @@ let subscribersData = [];
 const MAX_BROADCAST_MEDIA_SIZE = 7 * 1024 * 1024; // 7MB
 const BROADCAST_ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
 
+if (authToken && !authToken.includes(':')) {
+    localStorage.removeItem('adminToken');
+    localStorage.removeItem('adminUser');
+    authToken = '';
+}
+
 // Verifica se já está logado
 if (authToken) {
     showDashboard();
@@ -35,15 +41,20 @@ document.getElementById('loginForm').addEventListener('submit', async (e) => {
             authToken = credentials;
             localStorage.setItem('adminToken', credentials);
             localStorage.setItem('adminUser', username);
+            alert.classList.remove('show');
             showDashboard();
         } else {
             alert.textContent = '❌ Usuário ou senha incorretos!';
             alert.classList.add('show');
             setTimeout(() => alert.classList.remove('show'), 3000);
+            localStorage.removeItem('adminToken');
+            localStorage.removeItem('adminUser');
         }
     } catch (error) {
         alert.textContent = '❌ Erro ao conectar ao servidor';
         alert.classList.add('show');
+        localStorage.removeItem('adminToken');
+        localStorage.removeItem('adminUser');
     }
 });
 
@@ -77,6 +88,7 @@ if (subscriberTelegramFilter) {
 
 function logout() {
     localStorage.removeItem('adminToken');
+    localStorage.removeItem('adminUser');
     authToken = '';
     document.getElementById('loginContainer').style.display = 'flex';
     document.getElementById('dashboard').classList.remove('active');
@@ -121,11 +133,24 @@ async function apiRequest(endpoint, method = 'GET', body = null) {
     }
 
     if (!response.ok) {
+        if (response.status === 401) {
+            handleUnauthorized();
+        }
         const message = data && data.error ? data.error : (typeof data === 'string' && data ? data : 'Erro na requisição');
         throw new Error(message);
     }
 
     return data;
+}
+
+function handleUnauthorized() {
+    logout();
+    const alert = document.getElementById('loginAlert');
+    if (alert) {
+        alert.textContent = '⚠️ Sessão expirada. Faça login novamente.';
+        alert.classList.add('show');
+        setTimeout(() => alert.classList.remove('show'), 4000);
+    }
 }
 
 function escapeHtml(value) {
