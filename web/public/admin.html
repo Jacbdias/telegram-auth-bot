@@ -470,6 +470,7 @@
             display: flex;
             gap: 12px;
             flex-wrap: wrap;
+            align-items: center;
         }
 
         /* Search Box */
@@ -485,6 +486,22 @@
             border-radius: 8px;
             font-size: 14px;
             background: var(--main-bg);
+        }
+
+        .subscriber-filters {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+
+        .subscriber-filters select {
+            padding: 10px 12px;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            font-size: 14px;
+            background: var(--main-bg);
+            color: var(--text-primary);
+            min-width: 160px;
         }
 
         .search-icon {
@@ -1075,6 +1092,21 @@
                             <div class="search-box">
                                 <span class="search-icon">🔍</span>
                                 <input type="search" id="subscriberSearch" placeholder="Buscar assinante...">
+                            </div>
+                            <div class="subscriber-filters">
+                                <select id="subscriberPlanFilter">
+                                    <option value="">Todos os planos</option>
+                                </select>
+                                <select id="subscriberStatusFilter">
+                                    <option value="">Todos os status</option>
+                                    <option value="active">Ativos</option>
+                                    <option value="inactive">Inativos</option>
+                                </select>
+                                <select id="subscriberTelegramFilter">
+                                    <option value="">Todos no Telegram</option>
+                                    <option value="authorized">Autorizados</option>
+                                    <option value="pending">Pendentes</option>
+                                </select>
                             </div>
                             <button class="btn btn-success btn-small" onclick="openAddSubscriberModal()">+ Novo</button>
                             <button class="btn btn-small" onclick="openImportModal()">📂 Importar</button>
