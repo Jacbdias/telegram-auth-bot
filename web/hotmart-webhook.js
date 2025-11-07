@@ -51,14 +51,14 @@ router.post('/', async (req, res) => {
   // 🔍 DEBUG 2: Tipo de evento
   console.log('📌 Event Type:', eventType);
 
-  // ✅ ADICIONE ESTAS LINHAS AQUI ⬇️⬇️⬇️
-console.log('🔍 DEBUG CRÍTICO - Verificação de eventos:');
-console.log('  eventType extraído:', JSON.stringify(eventType));
-console.log('  eventType typeof:', typeof eventType);
-console.log('  eventType length:', eventType?.length);
-console.log('  ACTIVATION_EVENTS.has(eventType):', ACTIVATION_EVENTS.has(eventType));
-console.log('  DEACTIVATION_EVENTS.has(eventType):', DEACTIVATION_EVENTS.has(eventType));
-// ✅ ATÉ AQUI ⬆️⬆️⬆️
+  console.log('🔍 DEBUG CRÍTICO - Verificação de eventos:');
+  console.log('  eventType extraído:', JSON.stringify(eventType));
+  console.log('  eventType typeof:', typeof eventType);
+  console.log('  eventType length:', eventType?.length);
+  console.log('  ACTIVATION_EVENTS.has(eventType):', ACTIVATION_EVENTS.has(eventType));
+  console.log('  DEACTIVATION_EVENTS.has(eventType):', DEACTIVATION_EVENTS.has(eventType));
+  console.log('  Lista ACTIVATION_EVENTS:', Array.from(ACTIVATION_EVENTS).join(', '));
+  console.log('  Lista DEACTIVATION_EVENTS:', Array.from(DEACTIVATION_EVENTS).join(', '));
 
   if (!eventType) {
     return res.status(202).json({ success: true, message: 'Evento ignorado: tipo ausente' });
@@ -73,12 +73,12 @@ console.log('  DEACTIVATION_EVENTS.has(eventType):', DEACTIVATION_EVENTS.has(eve
   const subscriberData = extractSubscriberData(payload);
 
   // 🔍 DEBUG: Ver campos de telefone do buyer
-console.log('🔎 CAMPOS DE TELEFONE DO BUYER:');
-console.log('  checkout_phone_code:', payload.data?.buyer?.checkout_phone_code);
-console.log('  checkout_phone:', payload.data?.buyer?.checkout_phone);
+  console.log('🔎 CAMPOS DE TELEFONE DO BUYER:');
+  console.log('  checkout_phone_code:', payload.data?.buyer?.checkout_phone_code);
+  console.log('  checkout_phone:', payload.data?.buyer?.checkout_phone);
 
-// 🔍 DEBUG 4: Dados extraídos (este log já existe)
-console.log('👤 Dados extraídos:', JSON.stringify(subscriberData, null, 2));
+  // 🔍 DEBUG 4: Dados extraídos (este log já existe)
+  console.log('👤 Dados extraídos:', JSON.stringify(subscriberData, null, 2));
 
   // 🔍 DEBUG 4: Dados extraídos
   console.log('👤 Dados extraídos:', JSON.stringify(subscriberData, null, 2));
@@ -114,12 +114,32 @@ console.log('👤 Dados extraídos:', JSON.stringify(subscriberData, null, 2));
 
       // 🔍 DEBUG 7: Resultado da inserção
       console.log('✅ Registro salvo:', JSON.stringify(record, null, 2));
+
+      await db.pool.query(
+        `INSERT INTO authorization_logs (telegram_id, subscriber_id, action, timestamp)
+         VALUES ($1, $2, $3, NOW())`,
+        [
+          'DEBUG',
+          record?.id || null,
+          `Evento: ${eventType}, Email: ${subscriberData.email}, Ação: ACTIVATION`
+        ]
+      );
       console.log('=== FIM DEBUG ===');
 
       return res.json({ success: true, action: 'activated', subscriberId: record?.id || null, plan });
     }
     if (DEACTIVATION_EVENTS.has(eventType)) {
       const record = await db.deactivateSubscriberByEmail(subscriberData.email);
+
+      await db.pool.query(
+        `INSERT INTO authorization_logs (telegram_id, subscriber_id, action, timestamp)
+         VALUES ($1, $2, $3, NOW())`,
+        [
+          'DEBUG',
+          record?.id || null,
+          `Evento: ${eventType}, Email: ${subscriberData.email}, Ação: DEACTIVATION`
+        ]
+      );
       console.log('=== FIM DEBUG ===');
       return res.json({ success: true, action: 'deactivated', subscriberId: record?.id || null, plan });
     }
