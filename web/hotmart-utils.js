@@ -45,6 +45,42 @@ const DEACTIVATION_EVENTS = new Set([
   'subscription_suspended'
 ]);
 
+const ACTIVATION_STATUSES = new Set([
+  'approved',
+  'completed',
+  'finished',
+  'active',
+  'paid',
+  'up_to_date',
+  'authorized',
+  'current',
+  'available'
+]);
+
+const DEACTIVATION_STATUSES = new Set([
+  'refunded',
+  'refund_requested',
+  'refund_in_process',
+  'refund_in_progress',
+  'refund_in_analysis',
+  'refund_pending',
+  'refused',
+  'chargeback',
+  'chargeback_refunded',
+  'chargeback_pending',
+  'chargeback_in_process',
+  'waiting_chargeback',
+  'canceled',
+  'cancelled',
+  'expired',
+  'suspended',
+  'blocked',
+  'overdue',
+  'delayed',
+  'inactive',
+  'unpaid'
+]);
+
 function normalizeString(value) {
   if (value === undefined || value === null) {
     return '';
@@ -326,12 +362,44 @@ function getEventType(payload = {}) {
   return normalizeString(event).toLowerCase();
 }
 
+function getStatusFromPayload(payload = {}) {
+  const candidates = [
+    payload.status,
+    payload.status_name,
+    payload.data?.status,
+    payload.data?.status_name,
+    payload.data?.sale_status,
+    payload.data?.subscriber?.status,
+    payload.data?.subscriber?.status_name,
+    payload.data?.purchase?.status,
+    payload.data?.purchase?.status_name,
+    payload.data?.purchase?.sale_status,
+    payload.data?.purchase?.purchase_status,
+    payload.data?.purchase?.original_status,
+    payload.data?.subscription?.status,
+    payload.data?.subscription?.status_name
+  ];
+
+  for (const rawValue of candidates) {
+    const normalized = normalizeString(rawValue).toLowerCase();
+
+    if (normalized) {
+      return normalized;
+    }
+  }
+
+  return '';
+}
+
 module.exports = {
   ACTIVATION_EVENTS,
   DEACTIVATION_EVENTS,
+  ACTIVATION_STATUSES,
+  DEACTIVATION_STATUSES,
   verifyHotmartSignature,
   extractSubscriberData,
   resolvePlanFromMapping,
   normalizePlanMapping,
-  getEventType
+  getEventType,
+  getStatusFromPayload
 };

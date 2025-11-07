@@ -3,10 +3,13 @@ const db = require('./database');
 const {
   ACTIVATION_EVENTS,
   DEACTIVATION_EVENTS,
+  ACTIVATION_STATUSES,
+  DEACTIVATION_STATUSES,
   verifyHotmartSignature,
   extractSubscriberData,
   resolvePlanFromMapping,
-  getEventType
+  getEventType,
+  getStatusFromPayload
 } = require('./hotmart-utils');
 const router = express.Router();
 const WEBHOOK_SECRET = process.env.HOTMART_WEBHOOK_SECRET || '';
@@ -47,9 +50,12 @@ router.post('/', async (req, res) => {
   console.log('📥 Payload completo:', JSON.stringify(payload, null, 2));
 
   const eventType = getEventType(payload);
-  
+  const normalizedStatus = getStatusFromPayload(payload);
+
   // 🔍 DEBUG 2: Tipo de evento
   console.log('📌 Event Type:', eventType);
+
+  console.log('📊 Status normalizado:', normalizedStatus || '(vazio)');
 
   console.log('🔍 DEBUG CRÍTICO - Verificação de eventos:');
   console.log('  eventType extraído:', JSON.stringify(eventType));
@@ -57,14 +63,50 @@ router.post('/', async (req, res) => {
   console.log('  eventType length:', eventType?.length);
   console.log('  ACTIVATION_EVENTS.has(eventType):', ACTIVATION_EVENTS.has(eventType));
   console.log('  DEACTIVATION_EVENTS.has(eventType):', DEACTIVATION_EVENTS.has(eventType));
+  console.log('  ACTIVATION_STATUSES.has(status):', ACTIVATION_STATUSES.has(normalizedStatus));
+  console.log('  DEACTIVATION_STATUSES.has(status):', DEACTIVATION_STATUSES.has(normalizedStatus));
   console.log('  Lista ACTIVATION_EVENTS:', Array.from(ACTIVATION_EVENTS).join(', '));
   console.log('  Lista DEACTIVATION_EVENTS:', Array.from(DEACTIVATION_EVENTS).join(', '));
 
-  if (!eventType) {
-    return res.status(202).json({ success: true, message: 'Evento ignorado: tipo ausente' });
+  if (normalizedStatus) {
+    console.log('  Lista ACTIVATION_STATUSES:', Array.from(ACTIVATION_STATUSES).join(', '));
+    console.log('  Lista DEACTIVATION_STATUSES:', Array.from(DEACTIVATION_STATUSES).join(', '));
   }
-  if (!ACTIVATION_EVENTS.has(eventType) && !DEACTIVATION_EVENTS.has(eventType)) {
-    return res.status(202).json({ success: true, message: `Evento ignorado: ${eventType}` });
+
+  if (!eventType) {
+    console.log('⚠️ Evento sem tipo explícito.');
+  }
+
+  let action = null;
+  let actionSource = null;
+
+  if (eventType && ACTIVATION_EVENTS.has(eventType)) {
+    action = 'activation';
+    actionSource = 'event';
+  } else if (eventType && DEACTIVATION_EVENTS.has(eventType)) {
+    action = 'deactivation';
+    actionSource = 'event';
+  } else if (normalizedStatus && ACTIVATION_STATUSES.has(normalizedStatus)) {
+    action = 'activation';
+    actionSource = 'status';
+  } else if (normalizedStatus && DEACTIVATION_STATUSES.has(normalizedStatus)) {
+    action = 'deactivation';
+    actionSource = 'status';
+  }
+
+  if (!action) {
+    console.log('⚠️ Nenhuma ação determinada a partir do evento/status. Evento ignorado.');
+    console.log('=== FIM DEBUG ===');
+    return res.status(202).json({
+      success: true,
+      message: `Evento ignorado: ${eventType || normalizedStatus || 'desconhecido'}`
+    });
+  }
+
+  if (actionSource === 'status') {
+    console.log(
+      `⚠️ Ação determinada pelo status (${normalizedStatus}) devido a evento não mapeado (${eventType || 'sem tipo'}).`
+    );
   }
 
   // 🔍 DEBUG 3: Dados do buyer ANTES da extração
@@ -98,7 +140,7 @@ router.post('/', async (req, res) => {
     return res.status(422).json({ success: false, message: 'Plano não configurado para o evento recebido' });
   }
   try {
-    if (ACTIVATION_EVENTS.has(eventType)) {
+    if (action === 'activation') {
       const dataToInsert = {
         name: subscriberData.name || subscriberData.email,
         email: subscriberData.email,
@@ -121,14 +163,14 @@ router.post('/', async (req, res) => {
         [
           'DEBUG',
           record?.id || null,
-          `Evento: ${eventType}, Email: ${subscriberData.email}, Ação: ACTIVATION`
+          `Evento: ${eventType || 'n/d'}, Status: ${normalizedStatus || 'n/d'}, Origem: ${actionSource}, Email: ${subscriberData.email}, Ação: ACTIVATION`
         ]
       );
       console.log('=== FIM DEBUG ===');
 
       return res.json({ success: true, action: 'activated', subscriberId: record?.id || null, plan });
     }
-    if (DEACTIVATION_EVENTS.has(eventType)) {
+    if (action === 'deactivation') {
       const record = await db.deactivateSubscriberByEmail(subscriberData.email);
 
       await db.pool.query(
@@ -137,7 +179,7 @@ router.post('/', async (req, res) => {
         [
           'DEBUG',
           record?.id || null,
-          `Evento: ${eventType}, Email: ${subscriberData.email}, Ação: DEACTIVATION`
+          `Evento: ${eventType || 'n/d'}, Status: ${normalizedStatus || 'n/d'}, Origem: ${actionSource}, Email: ${subscriberData.email}, Ação: DEACTIVATION`
         ]
       );
       console.log('=== FIM DEBUG ===');
@@ -149,6 +191,9 @@ router.post('/', async (req, res) => {
     return res.status(500).json({ success: false, message: 'Erro interno ao processar evento' });
   }
   console.log('=== FIM DEBUG ===');
-  return res.status(202).json({ success: true, message: `Evento ignorado: ${eventType}` });
+  return res.status(202).json({
+    success: true,
+    message: `Evento ignorado: ${eventType || normalizedStatus || 'desconhecido'}`
+  });
 });
 module.exports = router;
