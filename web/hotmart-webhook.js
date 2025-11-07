@@ -158,11 +158,12 @@ router.post('/', async (req, res) => {
       console.log('✅ Registro salvo:', JSON.stringify(record, null, 2));
 
       await db.pool.query(
-        `INSERT INTO authorization_logs (telegram_id, subscriber_id, action, timestamp)
-         VALUES ($1, $2, $3, NOW())`,
+        `INSERT INTO authorization_logs (telegram_id, subscriber_id, action, user_agent, timestamp)
+         VALUES ($1, $2, $3, $4, NOW())`,
         [
           'DEBUG',
           record?.id || null,
+          'authorized',
           `Evento: ${eventType || 'n/d'}, Status: ${normalizedStatus || 'n/d'}, Origem: ${actionSource}, Email: ${subscriberData.email}, Ação: ACTIVATION`
         ]
       );
@@ -174,11 +175,12 @@ router.post('/', async (req, res) => {
       const record = await db.deactivateSubscriberByEmail(subscriberData.email);
 
       await db.pool.query(
-        `INSERT INTO authorization_logs (telegram_id, subscriber_id, action, timestamp)
-         VALUES ($1, $2, $3, NOW())`,
+        `INSERT INTO authorization_logs (telegram_id, subscriber_id, action, user_agent, timestamp)
+         VALUES ($1, $2, $3, $4, NOW())`,
         [
           'DEBUG',
           record?.id || null,
+          'revoked',
           `Evento: ${eventType || 'n/d'}, Status: ${normalizedStatus || 'n/d'}, Origem: ${actionSource}, Email: ${subscriberData.email}, Ação: DEACTIVATION`
         ]
       );
