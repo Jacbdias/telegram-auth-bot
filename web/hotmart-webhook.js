@@ -51,6 +51,15 @@ router.post('/', async (req, res) => {
   // 🔍 DEBUG 2: Tipo de evento
   console.log('📌 Event Type:', eventType);
 
+  // ✅ ADICIONE ESTAS LINHAS AQUI ⬇️⬇️⬇️
+console.log('🔍 DEBUG CRÍTICO - Verificação de eventos:');
+console.log('  eventType extraído:', JSON.stringify(eventType));
+console.log('  eventType typeof:', typeof eventType);
+console.log('  eventType length:', eventType?.length);
+console.log('  ACTIVATION_EVENTS.has(eventType):', ACTIVATION_EVENTS.has(eventType));
+console.log('  DEACTIVATION_EVENTS.has(eventType):', DEACTIVATION_EVENTS.has(eventType));
+// ✅ ATÉ AQUI ⬆️⬆️⬆️
+
   if (!eventType) {
     return res.status(202).json({ success: true, message: 'Evento ignorado: tipo ausente' });
   }
