@@ -3,13 +3,35 @@ const crypto = require('crypto');
 // Mapeamentos internos para planos conhecidos que precisam funcionar
 // mesmo que o HOTMART_PLAN_MAP não esteja atualizado em produção.
 const BUILTIN_PLAN_MAPPING = new Map([
+  // Mentoria Renda Turbinada
   ['6558190', 'Mentoria Renda Turbinada'],
   ['renda turbinada', 'Mentoria Renda Turbinada'],
   ['mentoria renda turbinada', 'Mentoria Renda Turbinada'],
-  ['5060349', 'CF VIP - FATOS DA BOLSA 3'],
-  ['close friends vip', 'CF VIP - FATOS DA BOLSA 3'],
+
+  // Close Friends LITE
   ['5060609', 'Close Friends LITE'],
-  ['close friends lite', 'Close Friends LITE']
+  ['3129181', 'Close Friends LITE'],
+  ['1874171', 'Close Friends LITE'],
+  ['3671256', 'Close Friends LITE'],
+  ['close friends lite', 'Close Friends LITE'],
+
+  // CF VIP - FATOS DA BOLSA 1
+  ['5060349', 'CF VIP - FATOS DA BOLSA 1'],
+
+  // CF VIP - FATOS DA BOLSA 2
+  ['1650879', 'CF VIP - FATOS DA BOLSA 2'],
+  ['3670772', 'CF VIP - FATOS DA BOLSA 2'],
+
+  // CF VIP - FATOS DA BOLSA 3
+  ['1128762', 'CF VIP - FATOS DA BOLSA 3'],
+  ['1762716', 'CF VIP - FATOS DA BOLSA 3'],
+  ['2163067', 'CF VIP - FATOS DA BOLSA 3'],
+  ['2947386', 'CF VIP - FATOS DA BOLSA 3'],
+  ['cf vip - fatos da bolsa 3', 'CF VIP - FATOS DA BOLSA 3'],
+
+  // Projeto Renda Passiva
+  ['3547657', 'Projeto Renda Passiva'],
+  ['projeto renda passiva', 'Projeto Renda Passiva']
 ]);
 
 // Suporte para webhook v1.0 (com ponto) e v2.0 (com underline)
