@@ -102,6 +102,14 @@ test('resolvePlanFromMapping prioriza código da oferta e fallback para padrão'
   assert.equal(resolvePlanFromMapping(mapping, {}, 'basico'), 'basico');
 });
 
+test('resolvePlanFromMapping usa IDs dos produtos Close Friends sem precisar de env', () => {
+  assert.equal(resolvePlanFromMapping({}, { productId: '5060349' }), 'CF VIP - FATOS DA BOLSA 1');
+  assert.equal(resolvePlanFromMapping({}, { productId: '5060609' }), 'Close Friends LITE');
+  assert.equal(resolvePlanFromMapping({}, { productId: '1650879' }), 'CF VIP - FATOS DA BOLSA 2');
+  assert.equal(resolvePlanFromMapping({}, { productId: '1128762' }), 'CF VIP - FATOS DA BOLSA 3');
+  assert.equal(resolvePlanFromMapping({}, { productName: 'CF VIP - FATOS DA BOLSA 3' }), 'CF VIP - FATOS DA BOLSA 3');
+});
+
 test('listas de eventos incluem ativações e cancelamentos esperados', () => {
   assert.equal(ACTIVATION_EVENTS.has('purchase.approved'), true);
   assert.equal(ACTIVATION_EVENTS.has('subscription.renewed'), true);

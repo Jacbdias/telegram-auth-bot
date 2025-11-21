@@ -46,6 +46,8 @@ No painel Hotmart, cada produto/oferta possui um código. Copie esse valor (fica
 
 No código o mapeamento é lido de forma case-insensitive, então `oferta_vip` e `OFERTA_VIP` funcionam da mesma forma.
 
+> Dica rápida: alguns produtos já têm fallback interno para os planos exatos cadastrados na tabela `channels`, como `5060609` → `Close Friends LITE`, `5060349` → `CF VIP - FATOS DA BOLSA 1`, `1650879`/`3670772` → `CF VIP - FATOS DA BOLSA 2` e `1128762`/`1762716`/`2163067`/`2947386` → `CF VIP - FATOS DA BOLSA 3`. Mesmo assim, vale registrá-los no `HOTMART_PLAN_MAP` para manter tudo documentado no ambiente.
+
 ## 4. Testar o fluxo
 
 1. No painel Hotmart, use a opção **Enviar teste** dentro do webhook recém-criado.
