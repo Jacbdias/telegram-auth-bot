@@ -40,6 +40,8 @@ const ACTIVATION_EVENTS = new Set([
   'purchase_approved',
   'purchase.completed',
   'purchase_completed',
+  'purchase.complete',      // ← ADICIONAR
+  'purchase_complete',      // ← ADICIONAR
   'purchase.finished',
   'purchase_finished',
   'subscription.approved',
@@ -59,14 +61,16 @@ const DEACTIVATION_EVENTS = new Set([
   'purchase_chargeback',
   'purchase.refunded',
   'purchase_refunded',
-  'purchase.protest',   
-  'purchase_protest',      
-  'purchase.dispute',      
-  'purchase_dispute',      
+  'purchase.protest',
+  'purchase_protest',
+  'purchase.dispute',
+  'purchase_dispute',
   'subscription.canceled',
   'subscription_canceled',
   'subscription.cancelled',
   'subscription_cancelled',
+  'subscription.cancellation',    // ← ADICIONAR
+  'subscription_cancellation',    // ← ADICIONAR
   'subscription.deactivated',
   'subscription_deactivated',
   'subscription.expired',
