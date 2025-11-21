@@ -102,6 +102,11 @@ test('resolvePlanFromMapping prioriza código da oferta e fallback para padrão'
   assert.equal(resolvePlanFromMapping(mapping, {}, 'basico'), 'basico');
 });
 
+test('resolvePlanFromMapping usa IDs dos produtos Close Friends sem precisar de env', () => {
+  assert.equal(resolvePlanFromMapping({}, { productId: '5060349' }), 'Close Friends VIP');
+  assert.equal(resolvePlanFromMapping({}, { productId: '5060609' }), 'Close Friends LITE');
+});
+
 test('listas de eventos incluem ativações e cancelamentos esperados', () => {
   assert.equal(ACTIVATION_EVENTS.has('purchase.approved'), true);
   assert.equal(ACTIVATION_EVENTS.has('subscription.renewed'), true);

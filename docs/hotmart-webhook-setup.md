@@ -46,6 +46,8 @@ No painel Hotmart, cada produto/oferta possui um código. Copie esse valor (fica
 
 No código o mapeamento é lido de forma case-insensitive, então `oferta_vip` e `OFERTA_VIP` funcionam da mesma forma.
 
+> Dica rápida: os produtos `5060349` e `5060609` já têm fallback interno para `Close Friends VIP` e `Close Friends LITE`, respectivamente. Mesmo assim, vale registrá-los no `HOTMART_PLAN_MAP` para manter tudo documentado no ambiente.
+
 ## 4. Testar o fluxo
 
 1. No painel Hotmart, use a opção **Enviar teste** dentro do webhook recém-criado.
