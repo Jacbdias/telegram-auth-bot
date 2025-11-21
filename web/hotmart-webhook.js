@@ -11,11 +11,15 @@ const {
   getEventType,
   getStatusFromPayload
 } = require('./hotmart-utils');
+
 const router = express.Router();
+
 const WEBHOOK_SECRET = process.env.HOTMART_WEBHOOK_SECRET || '';
 const PLAN_MAPPING = process.env.HOTMART_PLAN_MAP || '';
 const DEFAULT_PLAN = process.env.HOTMART_DEFAULT_PLAN || process.env.DEFAULT_PLAN || null;
+
 router.use(express.raw({ type: '*/*', limit: '2mb' }));
+
 router.post('/', async (req, res) => {
   const rawBody = Buffer.isBuffer(req.body) ? req.body : Buffer.from(req.body || '');
   
@@ -37,45 +41,20 @@ router.post('/', async (req, res) => {
       return res.status(401).json({ success: false, message: 'Assinatura inválida' });
     }
   }
+
   let payload;
   try {
     payload = JSON.parse(rawBody.toString('utf8'));
   } catch (error) {
-    console.error('Erro ao analisar payload do Hotmart:', error);
+    console.error('❌ Erro ao analisar payload do Hotmart:', error);
     return res.status(400).json({ success: false, message: 'JSON inválido' });
   }
-
-  // 🔍 DEBUG 1: Payload completo
-  console.log('=== DEBUG HOTMART WEBHOOK ===');
-  console.log('📥 Payload completo:', JSON.stringify(payload, null, 2));
 
   const eventType = getEventType(payload);
   const normalizedStatus = getStatusFromPayload(payload);
 
-  // 🔍 DEBUG 2: Tipo de evento
-  console.log('📌 Event Type:', eventType);
-
-  console.log('📊 Status normalizado:', normalizedStatus || '(vazio)');
-
-  console.log('🔍 DEBUG CRÍTICO - Verificação de eventos:');
-  console.log('  eventType extraído:', JSON.stringify(eventType));
-  console.log('  eventType typeof:', typeof eventType);
-  console.log('  eventType length:', eventType?.length);
-  console.log('  ACTIVATION_EVENTS.has(eventType):', ACTIVATION_EVENTS.has(eventType));
-  console.log('  DEACTIVATION_EVENTS.has(eventType):', DEACTIVATION_EVENTS.has(eventType));
-  console.log('  ACTIVATION_STATUSES.has(status):', ACTIVATION_STATUSES.has(normalizedStatus));
-  console.log('  DEACTIVATION_STATUSES.has(status):', DEACTIVATION_STATUSES.has(normalizedStatus));
-  console.log('  Lista ACTIVATION_EVENTS:', Array.from(ACTIVATION_EVENTS).join(', '));
-  console.log('  Lista DEACTIVATION_EVENTS:', Array.from(DEACTIVATION_EVENTS).join(', '));
-
-  if (normalizedStatus) {
-    console.log('  Lista ACTIVATION_STATUSES:', Array.from(ACTIVATION_STATUSES).join(', '));
-    console.log('  Lista DEACTIVATION_STATUSES:', Array.from(DEACTIVATION_STATUSES).join(', '));
-  }
-
-  if (!eventType) {
-    console.log('⚠️ Evento sem tipo explícito.');
-  }
+  // Log único e conciso
+  console.log(`📨 Webhook Hotmart: ${eventType} | Status: ${normalizedStatus || 'n/d'}`);
 
   let action = null;
   let actionSource = null;
@@ -95,8 +74,7 @@ router.post('/', async (req, res) => {
   }
 
   if (!action) {
-    console.log('⚠️ Nenhuma ação determinada a partir do evento/status. Evento ignorado.');
-    console.log('=== FIM DEBUG ===');
+    console.log(`⚠️ Evento ignorado: ${eventType || normalizedStatus || 'desconhecido'}`);
     return res.status(202).json({
       success: true,
       message: `Evento ignorado: ${eventType || normalizedStatus || 'desconhecido'}`
@@ -104,41 +82,23 @@ router.post('/', async (req, res) => {
   }
 
   if (actionSource === 'status') {
-    console.log(
-      `⚠️ Ação determinada pelo status (${normalizedStatus}) devido a evento não mapeado (${eventType || 'sem tipo'}).`
-    );
+    console.log(`⚠️ Ação por status: ${normalizedStatus} | Evento: ${eventType || 'n/d'}`);
   }
 
-  // 🔍 DEBUG 3: Dados do buyer ANTES da extração
-  console.log('🔎 Buyer do payload:', JSON.stringify(payload.data?.buyer, null, 2));
-
   const subscriberData = extractSubscriberData(payload);
-
-  // 🔍 DEBUG: Ver campos de telefone do buyer
-  console.log('🔎 CAMPOS DE TELEFONE DO BUYER:');
-  console.log('  checkout_phone_code:', payload.data?.buyer?.checkout_phone_code);
-  console.log('  checkout_phone:', payload.data?.buyer?.checkout_phone);
-
-  // 🔍 DEBUG 4: Dados extraídos (este log já existe)
-  console.log('👤 Dados extraídos:', JSON.stringify(subscriberData, null, 2));
-
-  // 🔍 DEBUG 4: Dados extraídos
-  console.log('👤 Dados extraídos:', JSON.stringify(subscriberData, null, 2));
-  console.log('📞 Telefone extraído:', subscriberData.phone || '(VAZIO)');
-  console.log('📧 Email extraído:', subscriberData.email || '(VAZIO)');
-  console.log('🏷️ Nome extraído:', subscriberData.name || '(VAZIO)');
+  console.log(`👤 Dados: ${subscriberData.email} | ${subscriberData.phone || 'sem tel'} | ${subscriberData.name}`);
 
   if (!subscriberData.email) {
     return res.status(400).json({ success: false, message: 'Email não encontrado no payload' });
   }
+
   const plan = resolvePlanFromMapping(PLAN_MAPPING, subscriberData, DEFAULT_PLAN);
-  
-  // 🔍 DEBUG 5: Plano resolvido
-  console.log('📋 Plano resolvido:', plan);
+  console.log(`📋 Plano: ${plan}`);
 
   if (!plan) {
     return res.status(422).json({ success: false, message: 'Plano não configurado para o evento recebido' });
   }
+
   try {
     if (action === 'activation') {
       const dataToInsert = {
@@ -149,53 +109,49 @@ router.post('/', async (req, res) => {
         status: 'active'
       };
 
-      // 🔍 DEBUG 6: Dados que serão inseridos
-      console.log('💾 Dados para inserir no banco:', JSON.stringify(dataToInsert, null, 2));
-
       const record = await db.upsertSubscriberFromHotmart(dataToInsert);
-
-      // 🔍 DEBUG 7: Resultado da inserção
-      console.log('✅ Registro salvo:', JSON.stringify(record, null, 2));
+      console.log(`✅ Ativado: ${subscriberData.email} | ID: ${record?.id} | Plano: ${plan}`);
 
       await db.pool.query(
         `INSERT INTO authorization_logs (telegram_id, subscriber_id, action, user_agent, timestamp)
          VALUES ($1, $2, $3, $4, NOW())`,
         [
-          'DEBUG',
+          'HOTMART',
           record?.id || null,
           'authorized',
-          `Evento: ${eventType || 'n/d'}, Status: ${normalizedStatus || 'n/d'}, Origem: ${actionSource}, Email: ${subscriberData.email}, Ação: ACTIVATION`
+          `Evento: ${eventType || 'n/d'}, Status: ${normalizedStatus || 'n/d'}, Origem: ${actionSource}`
         ]
       );
-      console.log('=== FIM DEBUG ===');
 
       return res.json({ success: true, action: 'activated', subscriberId: record?.id || null, plan });
     }
+
     if (action === 'deactivation') {
       const record = await db.deactivateSubscriberByEmail(subscriberData.email);
+      console.log(`⚠️ Desativado: ${subscriberData.email} | ID: ${record?.id}`);
 
       await db.pool.query(
         `INSERT INTO authorization_logs (telegram_id, subscriber_id, action, user_agent, timestamp)
          VALUES ($1, $2, $3, $4, NOW())`,
         [
-          'DEBUG',
+          'HOTMART',
           record?.id || null,
           'revoked',
-          `Evento: ${eventType || 'n/d'}, Status: ${normalizedStatus || 'n/d'}, Origem: ${actionSource}, Email: ${subscriberData.email}, Ação: DEACTIVATION`
+          `Evento: ${eventType || 'n/d'}, Status: ${normalizedStatus || 'n/d'}, Origem: ${actionSource}`
         ]
       );
-      console.log('=== FIM DEBUG ===');
+
       return res.json({ success: true, action: 'deactivated', subscriberId: record?.id || null, plan });
     }
   } catch (error) {
     console.error('❌ Erro ao processar evento do Hotmart:', error);
-    console.log('=== FIM DEBUG ===');
     return res.status(500).json({ success: false, message: 'Erro interno ao processar evento' });
   }
-  console.log('=== FIM DEBUG ===');
+
   return res.status(202).json({
     success: true,
     message: `Evento ignorado: ${eventType || normalizedStatus || 'desconhecido'}`
   });
 });
+
 module.exports = router;
