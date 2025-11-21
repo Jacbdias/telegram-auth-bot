@@ -6,8 +6,8 @@ const BUILTIN_PLAN_MAPPING = new Map([
   ['6558190', 'Mentoria Renda Turbinada'],
   ['renda turbinada', 'Mentoria Renda Turbinada'],
   ['mentoria renda turbinada', 'Mentoria Renda Turbinada'],
-  ['5060349', 'Close Friends VIP'],
-  ['close friends vip', 'Close Friends VIP'],
+  ['5060349', 'CF VIP - FATOS DA BOLSA 3'],
+  ['close friends vip', 'CF VIP - FATOS DA BOLSA 3'],
   ['5060609', 'Close Friends LITE'],
   ['close friends lite', 'Close Friends LITE']
 ]);

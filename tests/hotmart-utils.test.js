@@ -103,7 +103,7 @@ test('resolvePlanFromMapping prioriza código da oferta e fallback para padrão'
 });
 
 test('resolvePlanFromMapping usa IDs dos produtos Close Friends sem precisar de env', () => {
-  assert.equal(resolvePlanFromMapping({}, { productId: '5060349' }), 'Close Friends VIP');
+  assert.equal(resolvePlanFromMapping({}, { productId: '5060349' }), 'CF VIP - FATOS DA BOLSA 3');
   assert.equal(resolvePlanFromMapping({}, { productId: '5060609' }), 'Close Friends LITE');
 });
 
