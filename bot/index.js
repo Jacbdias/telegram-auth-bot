@@ -206,10 +206,14 @@ async function notifyUserAuthorized(telegramId, userData) {
 
   await revokeExistingInvites(telegramId);
 
+  // Escapa caracteres especiais do Markdown
+  const escapedName = userData.name.replace(/[_*[\]()~`>#+\-=|{}.!]/g, '\\$&');
+  const escapedPlan = userData.plan.replace(/[_*[\]()~`>#+\-=|{}.!]/g, '\\$&');
+
   let message =
-    `✅ *Verificação Concluída com Sucesso!*\n\n` +
-    `Bem-vindo(a), ${userData.name}!\n\n` +
-    `📋 *Seu Plano:* ${userData.plan}\n\n` +
+    `✅ *Verificação Concluída com Sucesso\\!*\n\n` +
+    `Bem\\-vindo\\(a\\), ${escapedName}\\!\n\n` +
+    `📋 *Seu Plano:* ${escapedPlan}\n\n` +
     `🔗 *Clique nos links abaixo para entrar nos grupos:*\n\n`;
 
   message += await generateInviteLinksForUser(telegramId, channels);
@@ -219,9 +223,28 @@ async function notifyUserAuthorized(telegramId, userData) {
     `• Estes links são de uso único\n` +
     `• Expiram em ${INVITE_DURATION_HOURS} horas\n` +
     `• Não compartilhe com outras pessoas\n\n` +
-    `💡 Use /meuscanais para solicitar novos links se necessário.`;
+    `💡 Use /meuscanais para solicitar novos links se necessário\\.`;
 
-  await bot.sendMessage(telegramId, message, { parse_mode: 'Markdown' });
+  try {
+    await bot.sendMessage(telegramId, message, { parse_mode: 'Markdown' });
+  } catch (error) {
+    console.error('Erro ao enviar mensagem de verificação:', error.message);
+    
+    // Fallback: tenta enviar sem formatação
+    const plainMessage = 
+      `✅ Verificação Concluída com Sucesso!\n\n` +
+      `Bem-vindo(a), ${userData.name}!\n\n` +
+      `📋 Seu Plano: ${userData.plan}\n\n` +
+      `🔗 Clique nos links abaixo para entrar nos grupos:\n\n` +
+      (await generateInviteLinksForUser(telegramId, channels)) +
+      `\n⚠️ IMPORTANTE:\n` +
+      `• Estes links são de uso único\n` +
+      `• Expiram em ${INVITE_DURATION_HOURS} horas\n` +
+      `• Não compartilhe com outras pessoas\n\n` +
+      `💡 Use /meuscanais para solicitar novos links se necessário.`;
+    
+    await bot.sendMessage(telegramId, plainMessage);
+  }
 }
 
 // Função para validar token
