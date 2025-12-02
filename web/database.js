@@ -110,6 +110,41 @@ function normalizeEmail(email) {
   return email.trim().toLowerCase();
 }
 
+// Normaliza plano(s) para um array de valores únicos
+function normalizePlanList(plan) {
+  if (!plan) return [];
+
+  if (Array.isArray(plan)) {
+    return [...new Set(plan.map((p) => String(p || '').trim()).filter(Boolean))];
+  }
+
+  if (typeof plan === 'string') {
+    return [
+      ...new Set(
+        plan
+          .split(/[,;\n]/)
+          .map((p) => p.trim())
+          .filter(Boolean)
+      )
+    ];
+  }
+
+  return [];
+}
+
+function formatPlanList(plan) {
+  return normalizePlanList(plan).join(', ');
+}
+
+function mergePlanValues(existingPlan, incomingPlan) {
+  const merged = [
+    ...normalizePlanList(existingPlan),
+    ...normalizePlanList(incomingPlan)
+  ];
+
+  return formatPlanList(merged);
+}
+
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 // ============== ADMIN USERS ==============
@@ -325,12 +360,14 @@ async function authorizeUser(telegramId, subscriber) {
 async function getUserChannels(plan) {
   try {
     await schemaReady;
+
+    const planList = normalizePlanList(plan);
     const result = await pool.query(
       `SELECT id, name, chat_id, description, plan, order_index, active, creates_join_request
        FROM channels
-       WHERE (plan = $1 OR plan = 'all') AND active = true
+       WHERE (plan = 'all' OR plan = ANY($1)) AND active = true
        ORDER BY order_index ASC`,
-      [plan]
+      [planList]
     );
 
     return result.rows;
@@ -478,11 +515,13 @@ async function revokeTelegramAccess(telegramId, { plan } = {}) {
     console.error('Erro ao marcar convites como revogados:', error);
   }
 
-  if (bot && userPlan) {
+  const userPlanList = normalizePlanList(userPlan);
+
+  if (bot && userPlanList.length > 0) {
     try {
       const allChannels = await getAllChannels();
       const userChannels = allChannels.filter(
-        (ch) => ch.plan === userPlan || ch.plan === 'all'
+        (ch) => ch.plan === 'all' || userPlanList.includes(ch.plan)
       );
 
       for (const channel of userChannels) {
@@ -582,8 +621,20 @@ async function upsertSubscriberFromHotmart({ name, email, phone, plan, status = 
 
   const normalizedPhone = normalizePhone(phone);
   const sanitizedName = name && name.trim() ? name.trim() : normalizedEmail;
-  const sanitizedPlan = plan && plan.trim ? plan.trim() : plan;
   const sanitizedStatus = status || 'active';
+  const sanitizedPlan = plan && plan.trim ? plan.trim() : plan;
+
+  let finalPlan = formatPlanList(sanitizedPlan);
+
+  try {
+    const existing = await getSubscriberByEmail(normalizedEmail);
+
+    if (existing) {
+      finalPlan = mergePlanValues(existing.plan, sanitizedPlan);
+    }
+  } catch (error) {
+    console.error('Erro ao mesclar planos existentes:', error);
+  }
 
   try {
     const result = await pool.query(
@@ -597,7 +648,7 @@ async function upsertSubscriberFromHotmart({ name, email, phone, plan, status = 
              origin = 'hotmart',
              updated_at = NOW()
        RETURNING id, name, email, phone, plan, status, origin`,
-      [sanitizedName, normalizedEmail, normalizedPhone, sanitizedPlan, sanitizedStatus]
+      [sanitizedName, normalizedEmail, normalizedPhone, finalPlan, sanitizedStatus]
     );
 
     return result.rows[0];
@@ -820,7 +871,7 @@ async function createSubscriber(name, email, phone, plan) {
       `INSERT INTO subscribers (name, email, phone, plan, status)
        VALUES ($1, $2, $3, $4, 'active')
        RETURNING *`,
-      [name?.trim(), normalizeEmail(email), normalizePhone(phone), plan?.trim()]
+      [name?.trim(), normalizeEmail(email), normalizePhone(phone), formatPlanList(plan)]
     );
     return result.rows[0];
   } catch (error) {
@@ -847,7 +898,7 @@ async function updateSubscriber(id, name, email, phone, plan, status) {
       `UPDATE subscribers
        SET name = $1, email = $2, phone = $3, plan = $4, status = $5, updated_at = NOW()
        WHERE id = $6`,
-      [name?.trim(), normalizeEmail(email), normalizePhone(phone), plan?.trim(), status, id]
+      [name?.trim(), normalizeEmail(email), normalizePhone(phone), formatPlanList(plan), status, id]
     );
     
     // Se mudou para inactive, revoga autorização E REMOVE DOS GRUPOS
