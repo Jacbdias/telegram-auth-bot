@@ -14,3 +14,4 @@
 
 ## Resumo prático
 - Para entregar os links dos novos grupos depois de adicionar um segundo plano, peça ao assinante para enviar `/meuscanais` ao bot. Isso renova todos os links com base na lista atual de planos sem exigir nova autenticação.
+- Se você remover um dos planos manualmente pelo painel **Editar Assinante**, somente os grupos ligados ao plano removido serão revogados para usuários já autorizados; os demais grupos permanecem acessíveis.
