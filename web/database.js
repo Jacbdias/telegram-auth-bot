@@ -42,6 +42,11 @@ async function ensureSchema() {
     );
 
     await pool.query(
+      `ALTER TABLE subscribers
+       ALTER COLUMN plan TYPE TEXT`
+    );
+
+    await pool.query(
       `CREATE TABLE IF NOT EXISTS user_invite_links (
          id SERIAL PRIMARY KEY,
          telegram_id VARCHAR(50) NOT NULL,
