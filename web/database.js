@@ -400,7 +400,7 @@ async function getActiveInviteLinksByTelegramId(telegramId) {
   try {
     await schemaReady;
     const result = await pool.query(
-      `SELECT uil.id, uil.invite_link, uil.channel_id, uil.expire_at, c.chat_id
+      `SELECT uil.id, uil.invite_link, uil.channel_id, uil.expire_at, c.chat_id, c.plan, c.active
        FROM user_invite_links uil
        JOIN channels c ON c.id = uil.channel_id
        WHERE uil.telegram_id = $1
@@ -451,7 +451,7 @@ async function markInviteLinksRevokedByTelegramId(telegramId) {
 }
 
 
-async function revokeTelegramAccess(telegramId, { plan } = {}) {
+async function revokeTelegramAccess(telegramId, { plan, revokedPlans } = {}) {
   if (!telegramId) {
     return;
   }
@@ -490,12 +490,25 @@ async function revokeTelegramAccess(telegramId, { plan } = {}) {
     }
   }
 
+  const targetPlanList = normalizePlanList(revokedPlans || userPlan);
+  const shouldFilterByPlan = Array.isArray(revokedPlans) || typeof revokedPlans === 'string';
+
   if (bot) {
     try {
       const activeInvites = await getActiveInviteLinksByTelegramId(telegramId);
       const inviteIds = [];
 
       for (const invite of activeInvites) {
+        if (shouldFilterByPlan) {
+          if (!invite.plan || !targetPlanList.includes(invite.plan)) {
+            continue;
+          }
+
+          if (invite.active === false) {
+            continue;
+          }
+        }
+
         try {
           await bot.revokeChatInviteLink(invite.chat_id, invite.invite_link);
           inviteIds.push(invite.id);
@@ -514,19 +527,26 @@ async function revokeTelegramAccess(telegramId, { plan } = {}) {
     }
   }
 
-  try {
-    await markInviteLinksRevokedByTelegramId(telegramId);
-  } catch (error) {
-    console.error('Erro ao marcar convites como revogados:', error);
+  if (!shouldFilterByPlan) {
+    try {
+      await markInviteLinksRevokedByTelegramId(telegramId);
+    } catch (error) {
+      console.error('Erro ao marcar convites como revogados:', error);
+    }
   }
 
   const userPlanList = normalizePlanList(userPlan);
 
-  if (bot && userPlanList.length > 0) {
+  const planListForChannels = shouldFilterByPlan ? targetPlanList : userPlanList;
+  const includeAllChannels = !shouldFilterByPlan;
+
+  if (bot && planListForChannels.length > 0) {
     try {
       const allChannels = await getAllChannels();
       const userChannels = allChannels.filter(
-        (ch) => ch.plan === 'all' || userPlanList.includes(ch.plan)
+        (ch) =>
+          ch.active &&
+          ((includeAllChannels && ch.plan === 'all') || planListForChannels.includes(ch.plan))
       );
 
       for (const channel of userChannels) {
@@ -934,24 +954,41 @@ async function createSubscriber(name, email, phone, plan) {
 // Atualizar assinante
 async function updateSubscriber(id, name, email, phone, plan, status) {
   const client = await pool.connect();
-  
+  const formattedPlan = formatPlanList(plan);
+  const normalizedEmail = normalizeEmail(email);
+  const normalizedPhone = normalizePhone(phone);
+  const trimmedName = name?.trim();
+
   try {
     await client.query('BEGIN');
-    
+
     // Pega status anterior
     const oldData = await client.query(
-      'SELECT status FROM subscribers WHERE id = $1',
+      'SELECT status, plan FROM subscribers WHERE id = $1',
       [id]
     );
-    
+
     // Atualiza subscriber
     await client.query(
       `UPDATE subscribers
        SET name = $1, email = $2, phone = $3, plan = $4, status = $5, updated_at = NOW()
        WHERE id = $6`,
-      [name?.trim(), normalizeEmail(email), normalizePhone(phone), formatPlanList(plan), status, id]
+      [trimmedName, normalizedEmail, normalizedPhone, formattedPlan, status, id]
     );
-    
+
+    const previousPlanList = normalizePlanList(oldData.rows[0]?.plan);
+    const updatedPlanList = normalizePlanList(formattedPlan);
+    const removedPlans = previousPlanList.filter((p) => !updatedPlanList.includes(p));
+
+    const authorizedUser = await client.query(
+      `SELECT telegram_id
+       FROM authorized_users
+       WHERE subscriber_id = $1`,
+      [id]
+    );
+
+    const telegramId = authorizedUser.rows[0]?.telegram_id;
+
     // Se mudou para inactive, revoga autorização E REMOVE DOS GRUPOS
     if (oldData.rows.length > 0 && oldData.rows[0].status === 'active' && status === 'inactive') {
       // Busca telegram_id e plano antes de revogar
@@ -983,6 +1020,12 @@ async function updateSubscriber(id, name, email, phone, plan, status) {
          VALUES ($1, $2, 'revoked', NOW())`,
         [tgId, id]
       );
+    } else if (telegramId && removedPlans.length > 0) {
+      try {
+        await revokeTelegramAccess(telegramId, { revokedPlans: removedPlans });
+      } catch (error) {
+        console.error('Erro ao revogar planos específicos:', error);
+      }
     }
     
     // Se mudou para active, permite autorização novamente
