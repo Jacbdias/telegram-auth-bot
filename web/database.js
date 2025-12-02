@@ -866,17 +866,63 @@ async function getSubscriberById(id) {
 
 // Criar novo assinante
 async function createSubscriber(name, email, phone, plan) {
+  const normalizedEmail = normalizeEmail(email);
+  const normalizedPhone = normalizePhone(phone);
+  const sanitizedName = name?.trim() || normalizedEmail;
+  const formattedPlan = formatPlanList(plan);
+
+  const client = await pool.connect();
+
   try {
-    const result = await pool.query(
-      `INSERT INTO subscribers (name, email, phone, plan, status)
-       VALUES ($1, $2, $3, $4, 'active')
-       RETURNING *`,
-      [name?.trim(), normalizeEmail(email), normalizePhone(phone), formatPlanList(plan)]
+    await client.query('BEGIN');
+
+    const existingResult = await client.query(
+      `SELECT id, plan
+       FROM subscribers
+       WHERE LOWER(TRIM(email)) = $1
+       LIMIT 1`,
+      [normalizedEmail]
     );
-    return result.rows[0];
+
+    let subscriberRow;
+
+    if (existingResult.rows.length > 0) {
+      const existing = existingResult.rows[0];
+      const mergedPlan = mergePlanValues(existing.plan, formattedPlan);
+
+      const updateResult = await client.query(
+        `UPDATE subscribers
+         SET name = $1,
+             email = $2,
+             phone = $3,
+             plan = $4,
+             status = 'active',
+             updated_at = NOW()
+         WHERE id = $5
+         RETURNING *`,
+        [sanitizedName, normalizedEmail, normalizedPhone, mergedPlan, existing.id]
+      );
+
+      subscriberRow = updateResult.rows[0];
+    } else {
+      const insertResult = await client.query(
+        `INSERT INTO subscribers (name, email, phone, plan, status)
+         VALUES ($1, $2, $3, $4, 'active')
+         RETURNING *`,
+        [sanitizedName, normalizedEmail, normalizedPhone, formattedPlan]
+      );
+
+      subscriberRow = insertResult.rows[0];
+    }
+
+    await client.query('COMMIT');
+    return subscriberRow;
   } catch (error) {
+    await client.query('ROLLBACK');
     console.error('Erro ao criar assinante:', error);
     throw error;
+  } finally {
+    client.release();
   }
 }
 
