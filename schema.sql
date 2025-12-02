@@ -16,7 +16,7 @@ CREATE TABLE IF NOT EXISTS subscribers (
     name VARCHAR(255) NOT NULL,
     email VARCHAR(255) NOT NULL UNIQUE,
     phone VARCHAR(20) NOT NULL,
-    plan VARCHAR(50) NOT NULL,
+    plan TEXT NOT NULL,
     status VARCHAR(20) DEFAULT 'active' CHECK (status IN ('active', 'inactive', 'suspended')),
     origin VARCHAR(20) DEFAULT 'manual' CHECK (origin IN ('manual', 'hotmart')),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
