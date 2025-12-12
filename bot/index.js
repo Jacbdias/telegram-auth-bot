@@ -64,6 +64,12 @@ async function generateInviteLinksForUser(telegramId, channels) {
         inviteOptions.creates_join_request = true;
       }
 
+      try {
+        await bot.unbanChatMember(channel.chat_id, telegramIdStr);
+      } catch (unbanError) {
+        console.warn(`Não foi possível desbanir ${telegramIdStr} em ${channel.name}:`, unbanError.message);
+      }
+
       const inviteLink = await bot.createChatInviteLink(channel.chat_id, inviteOptions);
 
       await db.saveUserInviteLink(telegramIdStr, channel.id, inviteLink.invite_link, expireAt);
