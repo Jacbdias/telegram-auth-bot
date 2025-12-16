@@ -397,11 +397,77 @@ function populateSubscriberPlanFilter(subscribers) {
     }
 }
 
+function parsePlanList(planValue) {
+    if (!planValue) {
+        return [];
+    }
+
+    return String(planValue)
+        .split(',')
+        .map((plan) => plan.trim())
+        .filter((plan) => plan.length > 0);
+}
+
+function updateSubscriberPlanOptions(selectedPlans = []) {
+    const planSelect = document.getElementById('subscriberPlan');
+
+    if (!planSelect) {
+        return;
+    }
+
+    const parsedSelectedPlans = parsePlanList(Array.isArray(selectedPlans) ? selectedPlans.join(', ') : selectedPlans);
+    const selectedSet = new Set(parsedSelectedPlans.map((plan) => plan.toLowerCase()));
+
+    const availablePlans = new Set();
+
+    channelsCache.forEach((channel) => {
+        const plan = (channel.plan || '').toString().trim();
+        if (plan) {
+            availablePlans.add(plan);
+        }
+    });
+
+    parsedSelectedPlans.forEach((plan) => {
+        availablePlans.add(plan);
+    });
+
+    const planOptions = Array.from(availablePlans).sort((a, b) =>
+        a.localeCompare(b, 'pt-BR', { sensitivity: 'base' })
+    );
+
+    planSelect.innerHTML = '';
+
+    if (planOptions.length === 0) {
+        const option = document.createElement('option');
+        option.value = '';
+        option.textContent = 'Nenhum plano cadastrado';
+        option.disabled = true;
+        planSelect.appendChild(option);
+        planSelect.required = false;
+        return;
+    }
+
+    planOptions.forEach((plan) => {
+        const option = document.createElement('option');
+        option.value = plan;
+        option.textContent = plan;
+
+        if (selectedSet.has(plan.toLowerCase())) {
+            option.selected = true;
+        }
+
+        planSelect.appendChild(option);
+    });
+
+    planSelect.required = true;
+}
+
 function openAddSubscriberModal() {
     document.getElementById('subscriberModalTitle').textContent = 'Novo Assinante';
     document.getElementById('subscriberForm').reset();
     document.getElementById('subscriberId').value = '';
     document.getElementById('subscriberStatus').value = 'active';
+    updateSubscriberPlanOptions([]);
     document.getElementById('subscriberModal').classList.add('active');
 }
 
@@ -414,9 +480,9 @@ async function editSubscriber(id) {
         document.getElementById('subscriberName').value = subscriber.name;
         document.getElementById('subscriberEmail').value = subscriber.email;
         document.getElementById('subscriberPhone').value = subscriber.phone;
-        document.getElementById('subscriberPlan').value = subscriber.plan;
+        updateSubscriberPlanOptions(parsePlanList(subscriber.plan));
         document.getElementById('subscriberStatus').value = subscriber.status;
-        
+
         document.getElementById('subscriberModal').classList.add('active');
     } catch (error) {
         alert('Erro ao carregar assinante');
@@ -429,13 +495,17 @@ function closeSubscriberModal() {
 
 document.getElementById('subscriberForm').addEventListener('submit', async (e) => {
     e.preventDefault();
-    
+
     const id = document.getElementById('subscriberId').value;
+    const subscriberPlanSelect = document.getElementById('subscriberPlan');
+    const selectedPlans = Array.from(subscriberPlanSelect.selectedOptions || [])
+        .map((option) => option.value.trim())
+        .filter((value) => value.length > 0);
     const data = {
         name: document.getElementById('subscriberName').value,
         email: document.getElementById('subscriberEmail').value,
         phone: document.getElementById('subscriberPhone').value,
-        plan: document.getElementById('subscriberPlan').value,
+        plan: selectedPlans.join(', '),
         status: document.getElementById('subscriberStatus').value
     };
     
@@ -476,6 +546,15 @@ async function loadChannels() {
     try {
         const channels = await apiRequest('/channels');
         channelsCache = channels;
+
+        const subscriberModal = document.getElementById('subscriberModal');
+        const subscriberPlanSelect = document.getElementById('subscriberPlan');
+
+        if (subscriberModal && subscriberModal.classList.contains('active') && subscriberPlanSelect) {
+            const currentSelection = Array.from(subscriberPlanSelect.selectedOptions || [])
+                .map((option) => option.value);
+            updateSubscriberPlanOptions(currentSelection);
+        }
 
         renderBroadcastChannelList(channels);
 

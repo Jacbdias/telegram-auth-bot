@@ -1223,8 +1223,8 @@
                 </div>
                 <div class="form-group">
                     <label>Plano</label>
-                    <input type="text" id="subscriberPlan" required placeholder="Use vírgula para múltiplos planos" />
-                    <div class="form-hint">Ao salvar, qualquer plano removido aqui será revogado somente para os grupos correspondentes do assinante já autorizado.</div>
+                    <select id="subscriberPlan" multiple required size="5" aria-label="Selecionar planos permitidos"></select>
+                    <div class="form-hint">Selecione um ou mais planos para liberar ao assinante. Planos removidos aqui serão revogados somente para os grupos correspondentes do assinante já autorizado.</div>
                 </div>
                 <div class="form-group">
                     <label>Status</label>
