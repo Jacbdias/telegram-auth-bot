@@ -146,6 +146,31 @@
             cursor: pointer;
         }
 
+        .checkbox-list {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            padding: 12px;
+            border: 1px solid #cbd5e1;
+            border-radius: 12px;
+            background: #f8fafc;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+
+        .checkbox-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 15px;
+        }
+
+        .checkbox-item input[type="checkbox"] {
+            width: 18px;
+            height: 18px;
+            cursor: pointer;
+        }
+
         .btn-primary {
             width: 100%;
             padding: 16px;
@@ -1223,8 +1248,8 @@
                 </div>
                 <div class="form-group">
                     <label>Plano</label>
-                    <select id="subscriberPlan" multiple required size="5" aria-label="Selecionar planos permitidos"></select>
-                    <div class="form-hint">Selecione um ou mais planos para liberar ao assinante. Planos removidos aqui serão revogados somente para os grupos correspondentes do assinante já autorizado.</div>
+                    <div id="subscriberPlanContainer" class="checkbox-list" role="group" aria-label="Selecionar planos permitidos"></div>
+                    <div class="form-hint">Selecione os planos que deseja liberar para o assinante. Remover um plano aqui revoga o acesso apenas nos grupos vinculados àquele plano.</div>
                 </div>
                 <div class="form-group">
                     <label>Status</label>

@@ -409,9 +409,9 @@ function parsePlanList(planValue) {
 }
 
 function updateSubscriberPlanOptions(selectedPlans = []) {
-    const planSelect = document.getElementById('subscriberPlan');
+    const planContainer = document.getElementById('subscriberPlanContainer');
 
-    if (!planSelect) {
+    if (!planContainer) {
         return;
     }
 
@@ -435,31 +435,40 @@ function updateSubscriberPlanOptions(selectedPlans = []) {
         a.localeCompare(b, 'pt-BR', { sensitivity: 'base' })
     );
 
-    planSelect.innerHTML = '';
+    planContainer.innerHTML = '';
 
     if (planOptions.length === 0) {
-        const option = document.createElement('option');
-        option.value = '';
-        option.textContent = 'Nenhum plano cadastrado';
-        option.disabled = true;
-        planSelect.appendChild(option);
-        planSelect.required = false;
+        const emptyState = document.createElement('div');
+        emptyState.className = 'form-hint';
+        emptyState.textContent = 'Nenhum plano cadastrado ainda.';
+        planContainer.appendChild(emptyState);
+        planContainer.dataset.hasOptions = 'false';
         return;
     }
 
-    planOptions.forEach((plan) => {
-        const option = document.createElement('option');
-        option.value = plan;
-        option.textContent = plan;
+    planOptions.forEach((plan, index) => {
+        const wrapper = document.createElement('label');
+        wrapper.className = 'checkbox-item';
+
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.name = 'subscriberPlanOption';
+        checkbox.value = plan;
+        checkbox.id = `subscriberPlanOption-${index}`;
 
         if (selectedSet.has(plan.toLowerCase())) {
-            option.selected = true;
+            checkbox.checked = true;
         }
 
-        planSelect.appendChild(option);
+        const labelText = document.createElement('span');
+        labelText.textContent = plan;
+
+        wrapper.appendChild(checkbox);
+        wrapper.appendChild(labelText);
+        planContainer.appendChild(wrapper);
     });
 
-    planSelect.required = true;
+    planContainer.dataset.hasOptions = 'true';
 }
 
 function openAddSubscriberModal() {
@@ -497,10 +506,17 @@ document.getElementById('subscriberForm').addEventListener('submit', async (e) =
     e.preventDefault();
 
     const id = document.getElementById('subscriberId').value;
-    const subscriberPlanSelect = document.getElementById('subscriberPlan');
-    const selectedPlans = Array.from(subscriberPlanSelect.selectedOptions || [])
-        .map((option) => option.value.trim())
+    const planContainer = document.getElementById('subscriberPlanContainer');
+    const selectedPlans = Array.from(planContainer ? planContainer.querySelectorAll('input[name="subscriberPlanOption"]:checked') : [])
+        .map((input) => input.value.trim())
         .filter((value) => value.length > 0);
+
+    const hasPlanOptions = planContainer ? planContainer.dataset.hasOptions === 'true' : false;
+
+    if (hasPlanOptions && selectedPlans.length === 0) {
+        showAlert('subscriberModalAlert', 'Selecione pelo menos um plano para o assinante.', 'warning', 4000);
+        return;
+    }
     const data = {
         name: document.getElementById('subscriberName').value,
         email: document.getElementById('subscriberEmail').value,
@@ -548,11 +564,11 @@ async function loadChannels() {
         channelsCache = channels;
 
         const subscriberModal = document.getElementById('subscriberModal');
-        const subscriberPlanSelect = document.getElementById('subscriberPlan');
+        const planContainer = document.getElementById('subscriberPlanContainer');
 
-        if (subscriberModal && subscriberModal.classList.contains('active') && subscriberPlanSelect) {
-            const currentSelection = Array.from(subscriberPlanSelect.selectedOptions || [])
-                .map((option) => option.value);
+        if (subscriberModal && subscriberModal.classList.contains('active') && planContainer) {
+            const currentSelection = Array.from(planContainer.querySelectorAll('input[name="subscriberPlanOption"]:checked'))
+                .map((input) => input.value);
             updateSubscriberPlanOptions(currentSelection);
         }
 
