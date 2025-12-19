@@ -362,15 +362,9 @@ function resolvePlanFromMapping(mappingInput, subscriberData = {}, defaultPlan =
     return null;
   };
 
-  const keysToTry = [
-    subscriberData.offerCode,
-    subscriberData.offerId,
-    subscriberData.productId,
-    subscriberData.productName,
-    subscriberData.planName
-  ];
+  const offerKeys = [subscriberData.offerCode, subscriberData.offerId];
 
-  for (const rawKey of keysToTry) {
+  for (const rawKey of offerKeys) {
     const plan = getPlanForKey(rawKey);
 
     if (plan) {
@@ -379,12 +373,23 @@ function resolvePlanFromMapping(mappingInput, subscriberData = {}, defaultPlan =
   }
 
   if (subscriberData.planName) {
-    const fallbackPlan = getPlanForKey(subscriberData.planName);
-    if (fallbackPlan) {
-      return fallbackPlan;
+    const planNameMapping = getPlanForKey(subscriberData.planName);
+
+    if (planNameMapping) {
+      return planNameMapping;
     }
 
     return subscriberData.planName;
+  }
+
+  const productKeys = [subscriberData.productId, subscriberData.productName];
+
+  for (const rawKey of productKeys) {
+    const plan = getPlanForKey(rawKey);
+
+    if (plan) {
+      return plan;
+    }
   }
 
   return defaultPlan;
