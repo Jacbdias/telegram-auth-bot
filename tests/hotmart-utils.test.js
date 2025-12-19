@@ -110,6 +110,15 @@ test('resolvePlanFromMapping usa IDs dos produtos Close Friends sem precisar de 
   assert.equal(resolvePlanFromMapping({}, { productName: 'CF VIP - FATOS DA BOLSA 3' }), 'CF VIP - FATOS DA BOLSA 3');
 });
 
+test('resolvePlanFromMapping prioriza o nome do plano em vez do ID do produto', () => {
+  const subscriber = {
+    productId: '6558190', // Mentoria Renda Turbinada (fallback interno)
+    planName: 'Close Friends LITE'
+  };
+
+  assert.equal(resolvePlanFromMapping({}, subscriber), 'Close Friends LITE');
+});
+
 test('listas de eventos incluem ativações e cancelamentos esperados', () => {
   assert.equal(ACTIVATION_EVENTS.has('purchase.approved'), true);
   assert.equal(ACTIVATION_EVENTS.has('subscription.renewed'), true);
