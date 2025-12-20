@@ -127,21 +127,47 @@ router.post('/', async (req, res) => {
     }
 
     if (action === 'deactivation') {
-      const record = await db.deactivateSubscriberByEmail(subscriberData.email);
-      console.log(`⚠️ Desativado: ${subscriberData.email} | ID: ${record?.id}`);
+      const record = await db.deactivateSubscriberByEmail(subscriberData.email, { plan });
+      const remainingPlans = (record?.plan || '')
+        .split(',')
+        .map((p) => p.trim())
+        .filter(Boolean);
+      const noChanges = !record || (plan && !record.planRevoked);
+      const deactivationAction =
+        noChanges || !plan
+          ? 'deactivated'
+          : remainingPlans.length > 0
+            ? 'plan_revoked'
+            : 'deactivated';
+      const responseAction = noChanges ? 'ignored' : deactivationAction;
 
-      await db.pool.query(
-        `INSERT INTO authorization_logs (telegram_id, subscriber_id, action, user_agent, timestamp)
-         VALUES ($1, $2, $3, $4, NOW())`,
-        [
-          'HOTMART',
-          record?.id || null,
-          'revoked',
-          `Evento: ${eventType || 'n/d'}, Status: ${normalizedStatus || 'n/d'}, Origem: ${actionSource}`
-        ]
-      );
+      const logSuffix = noChanges
+        ? `Nenhuma alteração realizada${plan ? ` para o plano ${plan}` : ''}`
+        : deactivationAction === 'plan_revoked'
+          ? `Plano removido: ${plan} | Planos restantes: ${remainingPlans.join(', ') || 'nenhum'}`
+          : 'Assinante totalmente desativado';
 
-      return res.json({ success: true, action: 'deactivated', subscriberId: record?.id || null, plan });
+      console.log(`⚠️ Desativado: ${subscriberData.email} | ID: ${record?.id || 'n/d'} | ${logSuffix}`);
+
+      if (!noChanges) {
+        await db.pool.query(
+          `INSERT INTO authorization_logs (telegram_id, subscriber_id, action, user_agent, timestamp)
+           VALUES ($1, $2, $3, $4, NOW())`,
+          [
+            'HOTMART',
+            record?.id || null,
+            'revoked',
+            `Evento: ${eventType || 'n/d'}, Status: ${normalizedStatus || 'n/d'}, Origem: ${actionSource}`
+          ]
+        );
+      }
+
+      return res.json({
+        success: true,
+        action: responseAction,
+        subscriberId: record?.id || null,
+        plan
+      });
     }
   } catch (error) {
     console.error('❌ Erro ao processar evento do Hotmart:', error);
