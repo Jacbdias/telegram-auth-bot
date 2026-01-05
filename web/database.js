@@ -700,8 +700,9 @@ async function getSubscriberByEmail(email) {
   }
 }
 
-async function deactivateSubscriberByEmail(email) {
+async function deactivateSubscriberByEmail(email, { plan } = {}) {
   const normalizedEmail = normalizeEmail(email);
+  const targetPlan = plan && String(plan).trim();
 
   if (!normalizedEmail) {
     return null;
@@ -734,8 +735,36 @@ async function deactivateSubscriberByEmail(email) {
     );
 
     let updatedSubscriber = subscriber;
+    const currentPlans = normalizePlanList(subscriber.plan);
+    const isPlanScoped = Boolean(targetPlan);
+    let planRevoked = false;
 
-    if (subscriber.status !== 'inactive') {
+    if (isPlanScoped) {
+      const remainingPlans = currentPlans.filter(
+        (p) => p.toLowerCase() !== targetPlan.toLowerCase()
+      );
+
+      planRevoked = remainingPlans.length !== currentPlans.length;
+
+      if (planRevoked) {
+        const nextStatus =
+          remainingPlans.length === 0
+            ? 'inactive'
+            : subscriber.status === 'inactive'
+              ? 'inactive'
+              : 'active';
+
+        const updateResult = await client.query(
+          `UPDATE subscribers
+           SET plan = $1, status = $2, updated_at = NOW()
+           WHERE id = $3
+           RETURNING id, name, email, phone, plan, status, origin`,
+          [formatPlanList(remainingPlans), nextStatus, subscriber.id]
+        );
+
+        updatedSubscriber = updateResult.rows[0];
+      }
+    } else if (subscriber.status !== 'inactive') {
       const updateResult = await client.query(
         `UPDATE subscribers
          SET status = 'inactive', updated_at = NOW()
@@ -749,17 +778,31 @@ async function deactivateSubscriberByEmail(email) {
 
     await client.query('COMMIT');
 
-    for (const row of authorizedResult.rows) {
-      if (row.telegram_id) {
+    const remainingPlansAfterUpdate = normalizePlanList(updatedSubscriber.plan);
+    const shouldFullyRevoke = !isPlanScoped || remainingPlansAfterUpdate.length === 0;
+
+    if (!isPlanScoped || planRevoked) {
+      for (const row of authorizedResult.rows) {
+        if (!row.telegram_id) {
+          continue;
+        }
+
         try {
-          await revokeAuthorization(row.telegram_id);
+          if (shouldFullyRevoke) {
+            await revokeAuthorization(row.telegram_id);
+          } else {
+            await revokeTelegramAccess(row.telegram_id, {
+              plan: updatedSubscriber.plan,
+              revokedPlans: targetPlan
+            });
+          }
         } catch (error) {
           console.error('Erro ao revogar autorização durante desativação por email:', error);
         }
       }
     }
 
-    return updatedSubscriber;
+    return { ...updatedSubscriber, planRevoked };
   } catch (error) {
     await client.query('ROLLBACK');
     console.error('Erro ao desativar assinante por email:', error);
