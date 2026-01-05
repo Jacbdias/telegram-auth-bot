@@ -372,16 +372,6 @@ function resolvePlanFromMapping(mappingInput, subscriberData = {}, defaultPlan =
     }
   }
 
-  if (subscriberData.planName) {
-    const planNameMapping = getPlanForKey(subscriberData.planName);
-
-    if (planNameMapping) {
-      return planNameMapping;
-    }
-
-    return subscriberData.planName;
-  }
-
   const productKeys = [subscriberData.productId, subscriberData.productName];
 
   for (const rawKey of productKeys) {
@@ -390,6 +380,16 @@ function resolvePlanFromMapping(mappingInput, subscriberData = {}, defaultPlan =
     if (plan) {
       return plan;
     }
+  }
+
+  if (subscriberData.planName) {
+    const planNameMapping = getPlanForKey(subscriberData.planName);
+
+    if (planNameMapping) {
+      return planNameMapping;
+    }
+
+    return subscriberData.planName;
   }
 
   return defaultPlan;
