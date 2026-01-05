@@ -108,15 +108,22 @@ test('resolvePlanFromMapping usa IDs dos produtos Close Friends sem precisar de 
   assert.equal(resolvePlanFromMapping({}, { productId: '1650879' }), 'CF VIP - FATOS DA BOLSA 2');
   assert.equal(resolvePlanFromMapping({}, { productId: '1128762' }), 'CF VIP - FATOS DA BOLSA 3');
   assert.equal(resolvePlanFromMapping({}, { productName: 'CF VIP - FATOS DA BOLSA 3' }), 'CF VIP - FATOS DA BOLSA 3');
+  assert.equal(resolvePlanFromMapping({}, { productId: '6568672' }), 'Mentoria Renda Turbinada');
+  assert.equal(
+    resolvePlanFromMapping({}, { productId: '1835417' }),
+    'Do Zero Ao Avançado - Criptomoedas e NFTs'
+  );
+  assert.equal(resolvePlanFromMapping({}, { productId: '4218223' }), 'Projeto FIIS');
+  assert.equal(resolvePlanFromMapping({}, { productId: '5325106' }), 'Projeto Trump');
 });
 
-test('resolvePlanFromMapping prioriza o nome do plano em vez do ID do produto', () => {
+test('resolvePlanFromMapping prioriza ID do produto quando há fallback interno, mesmo com planName divergente', () => {
   const subscriber = {
     productId: '6558190', // Mentoria Renda Turbinada (fallback interno)
     planName: 'Close Friends LITE'
   };
 
-  assert.equal(resolvePlanFromMapping({}, subscriber), 'Close Friends LITE');
+  assert.equal(resolvePlanFromMapping({}, subscriber), 'Mentoria Renda Turbinada');
 });
 
 test('listas de eventos incluem ativações e cancelamentos esperados', () => {
