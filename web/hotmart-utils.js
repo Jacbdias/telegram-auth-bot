@@ -5,6 +5,7 @@ const crypto = require('crypto');
 const BUILTIN_PLAN_MAPPING = new Map([
   // Mentoria Renda Turbinada
   ['6558190', 'Mentoria Renda Turbinada'],
+  ['6568672', 'Mentoria Renda Turbinada'],
   ['renda turbinada', 'Mentoria Renda Turbinada'],
   ['mentoria renda turbinada', 'Mentoria Renda Turbinada'],
 
@@ -31,7 +32,19 @@ const BUILTIN_PLAN_MAPPING = new Map([
 
   // Projeto Renda Passiva
   ['3547657', 'Projeto Renda Passiva'],
-  ['projeto renda passiva', 'Projeto Renda Passiva']
+  ['projeto renda passiva', 'Projeto Renda Passiva'],
+
+  // Do Zero Ao Avançado - Criptomoedas e NFTs
+  ['1835417', 'Do Zero Ao Avançado - Criptomoedas e NFTs'],
+  ['do zero ao avançado - criptomoedas e nfts', 'Do Zero Ao Avançado - Criptomoedas e NFTs'],
+
+  // Projeto FIIS
+  ['4218223', 'Projeto FIIS'],
+  ['projeto fiis', 'Projeto FIIS'],
+
+  // Projeto Trump
+  ['5325106', 'Projeto Trump'],
+  ['projeto trump', 'Projeto Trump']
 ]);
 
 // Suporte para webhook v1.0 (com ponto) e v2.0 (com underline)
