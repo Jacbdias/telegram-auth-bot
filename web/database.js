@@ -71,6 +71,14 @@ async function ensureSchema() {
         link: 'https://web.telegram.org/k/#-3268530938',
         plan: 'Mentoria Renda Turbinada',
         orderIndex: 0
+      },
+      {
+        name: 'Canal - Renda Turbinada',
+        chatId: '-1003738415907',
+        description: 'Canal da Mentoria Renda Turbinada',
+        link: 'https://web.telegram.org/k/#-3738415907',
+        plan: 'Mentoria Renda Turbinada',
+        orderIndex: 1
       }
     ];
 
@@ -84,6 +92,18 @@ async function ensureSchema() {
       );
 
       if (exists.rowCount === 0) {
+        const maxOrderResult = await pool.query(
+          `SELECT COALESCE(MAX(order_index), -1) AS max_order_index
+           FROM channels
+           WHERE plan = $1`,
+          [channel.plan]
+        );
+
+        const nextOrderIndex =
+          typeof channel.orderIndex === 'number'
+            ? channel.orderIndex
+            : Number(maxOrderResult.rows[0]?.max_order_index ?? -1) + 1;
+
         await pool.query(
           `INSERT INTO channels (name, chat_id, link, description, plan, order_index, active, creates_join_request)
            VALUES ($1, $2, $3, $4, $5, $6, true, false)`,
@@ -93,7 +113,7 @@ async function ensureSchema() {
             channel.link,
             channel.description,
             channel.plan,
-            channel.orderIndex
+            nextOrderIndex
           ]
         );
       }
