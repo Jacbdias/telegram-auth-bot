@@ -41,6 +41,15 @@ let channelsCache = [];
 let subscribersData = [];
 const MAX_BROADCAST_MEDIA_SIZE = 7 * 1024 * 1024; // 7MB
 const BROADCAST_ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+const DEFAULT_SUBSCRIBER_PLANS = [
+    'CF VIP - FATOS DA BOLSA 1',
+    'CF VIP - FATOS DA BOLSA 2',
+    'CF VIP - FATOS DA BOLSA 3',
+    'Close Friends LITE',
+    'Mentoria Renda Turbinada',
+    'Canal Renda Turbinada',
+    'Projeto Renda Passiva'
+];
 
 if (authToken && !authToken.includes(':')) {
     localStorage.removeItem('adminToken');
@@ -418,7 +427,7 @@ function updateSubscriberPlanOptions(selectedPlans = []) {
     const parsedSelectedPlans = parsePlanList(Array.isArray(selectedPlans) ? selectedPlans.join(', ') : selectedPlans);
     const selectedSet = new Set(parsedSelectedPlans.map((plan) => plan.toLowerCase()));
 
-    const availablePlans = new Set();
+    const availablePlans = new Set(DEFAULT_SUBSCRIBER_PLANS);
 
     channelsCache.forEach((channel) => {
         const plan = (channel.plan || '').toString().trim();

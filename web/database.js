@@ -79,6 +79,14 @@ async function ensureSchema() {
         link: 'https://web.telegram.org/k/#-3738415907',
         plan: 'Mentoria Renda Turbinada',
         orderIndex: 1
+      },
+      {
+        name: 'Canal - Renda Turbinada',
+        chatId: '-1003738415907',
+        description: 'Canal Renda Turbinada (acesso avulso)',
+        link: 'https://web.telegram.org/k/#-3738415907',
+        plan: 'Canal Renda Turbinada',
+        orderIndex: 0
       }
     ];
 
