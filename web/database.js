@@ -94,7 +94,7 @@ async function ensureSchema() {
       const exists = await pool.query(
         `SELECT 1
          FROM channels
-         WHERE chat_id = $1 OR (plan = $2 AND name = $3)
+         WHERE (chat_id = $1 AND plan = $2) OR (plan = $2 AND name = $3)
          LIMIT 1`,
         [channel.chatId, channel.plan, channel.name]
       );
