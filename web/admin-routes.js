@@ -3,6 +3,8 @@ const defaultDb = require('./database');
 const passwordUtils = require('./passwords');
 const cache = require('../bot/cache');
 const logger = require('../shared/logger');
+const metricsCollector = require('../shared/metrics-collector');
+const webhookQueue = require('../shared/webhook-queue');
 
 function createAdminRouter({
   db = defaultDb,
@@ -160,30 +162,34 @@ function createAdminRouter({
   });
 
   router.get('/metrics', adminAuth, async (req, res) => {
-    const health = {
-      uptime_seconds: Math.floor(process.uptime()),
-      database: {
-        connected: false,
-        response_ms: null,
-        pool: db.getPoolStats()
+    const cacheStats = cache.getStats();
+    const payload = {
+      current: {
+        uptime_seconds: Math.floor(process.uptime()),
+        memory_mb: Math.round(process.memoryUsage().rss / (1024 * 1024)),
+        cache: cacheStats,
+        pool: db.getPoolStats(),
+        circuit_breaker: db.getCircuitBreakerState()
       },
-      telegram_bot: {
-        polling: Boolean(getBotPollingStatus())
-      },
-      cache: cache.getStats(),
-      memory: process.memoryUsage(),
-      metrics_24h: logger.getMetricsSnapshot()
+      hourly: metricsCollector.getHourly(24),
+      daily: metricsCollector.getDaily(30)
     };
 
-    try {
-      const responseMs = await db.healthCheckQuery();
-      health.database.connected = true;
-      health.database.response_ms = responseMs;
-      return res.json(health);
-    } catch (error) {
-      health.database.error = error.message;
-      return res.status(503).json(health);
-    }
+    return res.json(payload);
+  });
+
+  router.get('/webhook-queue', adminAuth, (req, res) => {
+    res.json(webhookQueue.getStatus());
+  });
+
+  router.post('/webhook-queue/retry', adminAuth, (req, res) => {
+    const retried = webhookQueue.retryDeadLetter();
+    res.json({ success: true, retried });
+  });
+
+  router.delete('/webhook-queue/dead-letter', adminAuth, (req, res) => {
+    const cleared = webhookQueue.clearDeadLetter();
+    res.json({ success: true, cleared });
   });
 
   // ============== ADMIN USERS ==============

@@ -2,10 +2,12 @@ const express = require('express');
 const bodyParser = require('body-parser');
 const path = require('path');
 const db = require('./database');
-const { bot, validateToken, consumeToken, notifyUserAuthorized } = require('../bot/index');
+const { bot, validateToken, consumeToken, notifyUserAuthorized, stopBotIntervals } = require('../bot/index');
 const hotmartWebhook = require('./hotmart-webhook');
 const cache = require('../bot/cache');
 const logger = require('../shared/logger');
+const metrics = require('../shared/metrics-collector');
+const alerts = require('../shared/alerts');
 const RateLimiter = require('../shared/rate-limiter');
 const { sanitizeEmail } = require('../shared/sanitize');
 
@@ -25,7 +27,7 @@ const getRequestIp = (req) =>
 
 const makeRateLimitMiddleware = (limiter, scope) => (req, res, next) => {
   const ip = getRequestIp(req);
-  const result = limiter.isAllowed(ip);
+  const result = limiter.isAllowed(ip, req.path);
 
   if (!result.allowed) {
     logger.warn('rate_limit_exceeded', { scope, ip, retry_after_seconds: result.retryAfterSeconds });
@@ -59,6 +61,8 @@ app.use((req, res, next) => {
       return;
     }
 
+    metrics.increment('http_requests');
+    if (res.statusCode >= 500) metrics.increment('http_errors');
     logger.info('http_request', {
       method: req.method,
       path: req.path,
@@ -82,6 +86,7 @@ app.get('/health', makeRateLimitMiddleware(healthRateLimiter, 'health_check'), a
       polling: Boolean(bot && typeof bot.isPolling === 'function' ? bot.isPolling() : false)
     },
     cache: cache.getStats(),
+    circuit_breaker: db.getCircuitBreakerState(),
     version: process.env.APP_VERSION || '1.0.0'
   };
 
@@ -231,9 +236,23 @@ app.get('/api/check-token', (req, res) => {
 });
 
 // Limpa tentativas antigas a cada hora
-setInterval(() => {
+const verificationCleanupInterval = setInterval(() => {
   verificationAttempts.clear();
 }, 60 * 60 * 1000);
+
+const healthWatchInterval = setInterval(async () => {
+  const start = Date.now();
+  try {
+    const ms = await db.healthCheckQuery();
+    if (ms > 5000) {
+      alerts.send('HEALTH_DEGRADED', `Health check: banco respondeu em ${ms}ms`, 5 * 60 * 1000);
+    }
+  } catch (_error) {
+    alerts.send('HEALTH_DEGRADED', 'Health check: banco não respondeu', 5 * 60 * 1000);
+  } finally {
+    metrics.recordLatency('db', Date.now() - start);
+  }
+}, 60 * 1000);
 
 // Rotas administrativas
 const { createAdminRouter } = require('./admin-routes');
@@ -257,6 +276,18 @@ async function gracefulShutdown(signal) {
         await bot.stopPolling();
       }
 
+      healthRateLimiter.stop();
+      webhookRateLimiter.stop();
+      adminApiRateLimiter.stop();
+      adminLoginRateLimiter.stop();
+      clearInterval(verificationCleanupInterval);
+      clearInterval(healthWatchInterval);
+      stopBotIntervals();
+      if (typeof hotmartWebhook.stopWebhookRetryInterval === 'function') {
+        hotmartWebhook.stopWebhookRetryInterval();
+      }
+      metrics.stop();
+      logger.stopDailyReset();
       await db.pool.end();
       logger.info('shutdown_complete', { signal });
       process.exit(0);

@@ -7,6 +7,7 @@ const metrics = {
 };
 
 let resetTimerStarted = false;
+let resetTimer = null;
 
 function emit(level, msg, data = {}) {
   const payload = {
@@ -63,10 +64,18 @@ function resetDailyMetrics() {
 function startDailyReset() {
   if (resetTimerStarted) return;
   resetTimerStarted = true;
-  setInterval(() => {
+  resetTimer = setInterval(() => {
     resetDailyMetrics();
     info('metrics_reset_24h');
   }, 24 * 60 * 60 * 1000);
+}
+
+function stopDailyReset() {
+  if (resetTimer) {
+    clearInterval(resetTimer);
+    resetTimer = null;
+    resetTimerStarted = false;
+  }
 }
 
 module.exports = {
@@ -79,5 +88,6 @@ module.exports = {
   incrementWebhook,
   incrementAuthAction,
   getMetricsSnapshot,
-  startDailyReset
+  startDailyReset,
+  stopDailyReset
 };

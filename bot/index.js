@@ -3,6 +3,9 @@ const crypto = require('crypto');
 const db = require('../web/database');
 const cache = require('./cache');
 const logger = require('../shared/logger');
+const alerts = require('../shared/alerts');
+const metrics = require('../shared/metrics-collector');
+const { withRetry, sleep } = require('../shared/retry');
 
 const token = process.env.TELEGRAM_BOT_TOKEN;
 const rawWebAppUrl = process.env.WEB_APP_URL;
@@ -10,6 +13,7 @@ const webAppUrl = rawWebAppUrl ? rawWebAppUrl.replace(/\/+$/, '') : '';
 const supportUsername = process.env.SUPPORT_USERNAME || '@suportefatosdabolsa';
 
 const bot = new TelegramBot(token, { polling: true });
+alerts.init(bot, process.env.ALERT_CHAT_ID);
 
 const INVITE_DURATION_HOURS = 72;
 const INVITE_MEMBER_LIMIT = 1;
@@ -17,6 +21,51 @@ const USER_CACHE_TTL_MS = 5 * 60 * 1000;
 const SUBSCRIBER_CACHE_TTL_MS = 5 * 60 * 1000;
 const REQUIRED_CHANNELS_CACHE_TTL_MS = 10 * 60 * 1000;
 const MEMBERSHIP_CACHE_TTL_MS = 2 * 60 * 1000;
+
+function isRetryableTelegramError(error) {
+  const status = error?.response?.statusCode;
+  const message = String(error?.message || '').toLowerCase();
+  if (status === 400 || status === 403) return false;
+  if (status === 429 || status === 502 || status === 503) return true;
+  return message.includes('etimedout') || message.includes('econnreset') || message.includes('network');
+}
+
+async function sendWithRetry(sendFn, retries = 1, context = 'info') {
+  return withRetry(sendFn, {
+    maxRetries: retries,
+    baseDelayMs: 500,
+    maxDelayMs: 5000,
+    retryableErrors: ['ETELEGRAM: 429', 'ETELEGRAM: 502', 'ETELEGRAM: 503', 'ETIMEDOUT', 'ECONNRESET'],
+    getDelayMs: (err, _attempt, delay) => {
+      if (err?.response?.statusCode === 429) {
+        return (err.response.body?.parameters?.retry_after || 5) * 1000;
+      }
+      return delay;
+    },
+    onRetry: async (err) => {
+      if (!isRetryableTelegramError(err)) {
+        throw err;
+      }
+      if (err?.response?.statusCode === 429) {
+        const retryAfter = (err.response.body?.parameters?.retry_after || 5) * 1000;
+        await sleep(retryAfter);
+      }
+      logger.warn('telegram_retry', { context, error: err.message });
+    }
+  });
+}
+
+async function safeSendMessage(chatId, message, options = {}, retries = 1, context = 'info') {
+  try {
+    const result = await sendWithRetry(() => bot.sendMessage(chatId, message, options), retries, context);
+    metrics.increment('telegram_messages_sent');
+    return result;
+  } catch (error) {
+    metrics.increment('telegram_errors');
+    logger.error('telegram_send_message_error', { chat_id: String(chatId), context, error: error.message });
+    throw error;
+  }
+}
 
 async function getCachedUserByTelegramId(telegramId) {
   const telegramIdStr = telegramId.toString();
@@ -177,11 +226,13 @@ bot.onText(/\/start/, async (msg) => {
   const user = await getCachedUserByTelegramId(chatId);
   
   if (user && user.authorized) {
-    return bot.sendMessage(chatId, 
+    return safeSendMessage(chatId, 
       `✅ Olá *${username}*!\n\n` +
       `Você já está autorizado e tem acesso aos canais.\n\n` +
       `Digite /meuscanais para ver seus acessos.`,
-      { parse_mode: 'Markdown' }
+      { parse_mode: 'Markdown' },
+      1,
+      'welcome_info'
     );
   }
 
@@ -201,7 +252,7 @@ bot.onText(/\/start/, async (msg) => {
     ]]
   };
 
-  bot.sendMessage(chatId, welcomeMessage, {
+  safeSendMessage(chatId, welcomeMessage, {
     parse_mode: 'Markdown',
     reply_markup: keyboard
   });
@@ -229,7 +280,7 @@ bot.on('callback_query', async (query) => {
 
     if (!webAppUrl) {
       console.error('WEB_APP_URL não está configurada.');
-      bot.sendMessage(chatId,
+      safeSendMessage(chatId,
         '⚠️ Não foi possível gerar o link de verificação no momento.\n' +
         `Entre em contato com o suporte: ${supportUsername}`
       );
@@ -246,7 +297,7 @@ bot.on('callback_query', async (query) => {
       `⏱ Este link expira em 15 minutos.\n\n` +
       `🔒 Por segurança, não compartilhe este link com ninguém.`;
 
-    bot.sendMessage(chatId, message);
+    safeSendMessage(chatId, message);
     bot.answerCallbackQuery(query.id);
   }
 });
@@ -257,7 +308,7 @@ bot.onText(/\/meuscanais/, async (msg) => {
   const user = await getCachedUserByTelegramId(chatId);
 
   if (!user || !user.authorized) {
-    return bot.sendMessage(chatId, 
+    return safeSendMessage(chatId, 
       '❌ Você ainda não está autorizado.\n\n' +
       'Use /start para iniciar o processo de verificação.'
     );
@@ -266,7 +317,7 @@ bot.onText(/\/meuscanais/, async (msg) => {
   const channels = await getCachedChannelsForPlan(user.plan);
 
   if (channels.length === 0) {
-    return bot.sendMessage(chatId,
+    return safeSendMessage(chatId,
       '⚠️ Nenhum canal disponível para seu plano.\n\n' +
       `Entre em contato com o suporte: ${supportUsername}`
     );
@@ -280,12 +331,13 @@ bot.onText(/\/meuscanais/, async (msg) => {
 
   message += `\n💡 Links de uso único que expiram em ${INVITE_DURATION_HOURS}h.`;
 
-  bot.sendMessage(chatId, message, { parse_mode: 'Markdown' });
+  safeSendMessage(chatId, message, { parse_mode: 'Markdown' });
 });
 
 // Função chamada quando verificação é bem-sucedida
 async function notifyUserAuthorized(telegramId, userData) {
   const channels = await getCachedChannelsForPlan(userData.plan);
+  metrics.increment('users_authorized');
   logger.info('user_authorized', {
     telegram_id: String(telegramId),
     plan: userData.plan,
@@ -315,7 +367,7 @@ async function notifyUserAuthorized(telegramId, userData) {
     `💡 Use /meuscanais para solicitar novos links se necessário\\.`;
 
   try {
-    await bot.sendMessage(telegramId, message, { parse_mode: 'Markdown' });
+    await safeSendMessage(telegramId, message, { parse_mode: 'Markdown' }, 3, 'authorization_success');
   } catch (error) {
     console.error('Erro ao enviar mensagem de verificação:', error.message);
     logger.error('telegram_send_message_error', {
@@ -336,7 +388,7 @@ async function notifyUserAuthorized(telegramId, userData) {
       `• Não compartilhe com outras pessoas\n\n` +
       `💡 Use /meuscanais para solicitar novos links se necessário.`;
     
-    await bot.sendMessage(telegramId, plainMessage);
+    await safeSendMessage(telegramId, plainMessage, {}, 3, 'authorization_success_fallback');
   }
 }
 
@@ -372,11 +424,16 @@ function cleanExpiredTokens() {
 }
 
 // Limpa tokens expirados a cada 5 minutos
-setInterval(cleanExpiredTokens, 5 * 60 * 1000);
+const cleanTokensInterval = setInterval(cleanExpiredTokens, 5 * 60 * 1000);
 
-setInterval(() => {
+const cacheStatsInterval = setInterval(() => {
   logger.info('cache_stats', cache.getStats());
 }, 5 * 60 * 1000);
+
+bot.on('polling_error', (error) => {
+  alerts.send('TELEGRAM_POLLING_ERROR', `Erro de polling: ${error.message}`, 10 * 60 * 1000);
+  metrics.increment('telegram_errors');
+});
 
 // Comando /revogar (apenas para admins)
 bot.onText(/\/revogar (.+)/, async (msg, match) => {
@@ -387,7 +444,7 @@ bot.onText(/\/revogar (.+)/, async (msg, match) => {
 const adminIds = ['1839742847']; // Seu Telegram ID
   
   if (!adminIds.includes(chatId.toString())) {
-    return bot.sendMessage(chatId, '❌ Você não tem permissão para usar este comando.');
+    return safeSendMessage(chatId, '❌ Você não tem permissão para usar este comando.');
   }
 
   try {
@@ -395,7 +452,7 @@ const adminIds = ['1839742847']; // Seu Telegram ID
     const subscriber = await db.getSubscriberByEmail(email);
     
     if (!subscriber) {
-      return bot.sendMessage(chatId, 
+      return safeSendMessage(chatId, 
         `❌ Nenhum assinante encontrado com o email: ${email}`
       );
     }
@@ -439,7 +496,7 @@ const adminIds = ['1839742847']; // Seu Telegram ID
           `entre em contato com nosso suporte: ${supportUsername}\n\n` +
           `_Equipe Fatos da Bolsa_`;
 
-        await bot.sendMessage(authorizedUser.telegram_id, userMessage, { parse_mode: 'Markdown' });
+        await safeSendMessage(authorizedUser.telegram_id, userMessage, { parse_mode: 'Markdown' }, 2, 'revocation_notice');
       } catch (msgError) {
         console.error('Não foi possível enviar mensagem ao usuário:', msgError.message);
       }
@@ -447,6 +504,7 @@ const adminIds = ['1839742847']; // Seu Telegram ID
 
     // Remove do banco de dados
     await db.revokeUserAccess(subscriber.id);
+    metrics.increment('users_revoked');
     logger.info('user_revoked', {
       subscriber_id: subscriber.id,
       telegram_id: authorizedUser?.telegram_id || null,
@@ -476,11 +534,11 @@ const adminIds = ['1839742847']; // Seu Telegram ID
       confirmMessage += `\nℹ️ Usuário não tinha Telegram vinculado.`;
     }
 
-    bot.sendMessage(chatId, confirmMessage, { parse_mode: 'Markdown' });
+    safeSendMessage(chatId, confirmMessage, { parse_mode: 'Markdown' });
 
   } catch (error) {
     console.error('Erro ao revogar acesso:', error);
-    bot.sendMessage(chatId, 
+    safeSendMessage(chatId, 
       `❌ Erro ao revogar acesso: ${error.message}`
     );
   }
@@ -501,7 +559,7 @@ bot.onText(/\/ajuda_admin/, (msg) => {
     `💡 *Exemplo:*\n` +
     `/revogar joao@email.com`;
 
-  bot.sendMessage(chatId, helpMessage, { parse_mode: 'Markdown' });
+  safeSendMessage(chatId, helpMessage, { parse_mode: 'Markdown' });
 });
 
 // Comando /sync - Sincroniza status dos usuários com os grupos
@@ -512,10 +570,10 @@ bot.onText(/\/sync/, async (msg) => {
   const adminIds = ['1839742847']; // SUBSTITUA pelo seu ID
   
   if (!adminIds.includes(chatId.toString())) {
-    return bot.sendMessage(chatId, '❌ Você não tem permissão para usar este comando.');
+    return safeSendMessage(chatId, '❌ Você não tem permissão para usar este comando.');
   }
 
-  bot.sendMessage(chatId, '🔄 Iniciando sincronização...');
+  safeSendMessage(chatId, '🔄 Iniciando sincronização...');
 
   try {
     // Pega todos os usuários inativos que ainda têm autorização
@@ -529,7 +587,7 @@ bot.onText(/\/sync/, async (msg) => {
     const inactiveUsers = result.rows;
 
     if (inactiveUsers.length === 0) {
-      return bot.sendMessage(chatId, '✅ Nenhum usuário inativo para remover.');
+      return safeSendMessage(chatId, '✅ Nenhum usuário inativo para remover.');
     }
 
     // Remove de todos os canais
@@ -552,7 +610,7 @@ bot.onText(/\/sync/, async (msg) => {
 
       // Notifica usuário
       try {
-        await bot.sendMessage(user.telegram_id,
+        await safeSendMessage(user.telegram_id,
           `⚠️ *Acesso Revogado*\n\n` +
           `Não encontramos uma assinatura ativa vinculada à sua conta.\n\n` +
           `Seu acesso aos canais foi removido.\n\n` +
@@ -566,20 +624,26 @@ bot.onText(/\/sync/, async (msg) => {
       removedCount++;
     }
 
-    bot.sendMessage(chatId, 
+    safeSendMessage(chatId, 
       `✅ Sincronização concluída!\n\n` +
       `👥 Usuários removidos: ${removedCount}`
     );
     logger.info('sync_revoked_inactive_users', { removed_count: removedCount });
 
   } catch (error) {
-    bot.sendMessage(chatId, `❌ Erro: ${error.message}`);
+    safeSendMessage(chatId, `❌ Erro: ${error.message}`);
   }
 });
+
+function stopBotIntervals() {
+  clearInterval(cleanTokensInterval);
+  clearInterval(cacheStatsInterval);
+}
 
 module.exports = {
   bot,
   validateToken,
   consumeToken,
-  notifyUserAuthorized
+  notifyUserAuthorized,
+  stopBotIntervals
 };

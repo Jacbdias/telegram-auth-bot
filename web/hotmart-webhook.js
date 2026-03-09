@@ -2,6 +2,9 @@ const express = require('express');
 const db = require('./database');
 const cache = require('../bot/cache');
 const logger = require('../shared/logger');
+const metrics = require('../shared/metrics-collector');
+const alerts = require('../shared/alerts');
+const webhookQueue = require('../shared/webhook-queue');
 const { sanitizeEmail, sanitizeText } = require('../shared/sanitize');
 const {
   ACTIVATION_EVENTS,
@@ -23,42 +26,12 @@ const DEFAULT_PLAN = process.env.HOTMART_DEFAULT_PLAN || process.env.DEFAULT_PLA
 
 router.use(express.raw({ type: '*/*', limit: '2mb' }));
 
-router.post('/', async (req, res) => {
-  const rawBody = Buffer.isBuffer(req.body) ? req.body : Buffer.from(req.body || '');
-  
-  // CORREÇÃO: Aceitar tanto HMAC quanto Hottok
-  const signature = req.get('X-Hotmart-Hmac-SHA256') || 
-                    req.get('X-Hotmart-Hmac-Sha256') ||
-                    req.get('X-Hotmart-Hottok');
-  
-  // CORREÇÃO: Se for Hottok (webhook v2.0.0), fazer validação simples
-  const hottok = req.get('X-Hotmart-Hottok');
-  if (hottok) {
-    // Validação simples: comparar o Hottok recebido com o configurado
-    if (hottok !== WEBHOOK_SECRET) {
-      return res.status(401).json({ success: false, message: 'Hottok inválido' });
-    }
-  } else {
-    // Validação HMAC (webhook v1.0)
-    if (!verifyHotmartSignature(rawBody, signature, WEBHOOK_SECRET)) {
-      return res.status(401).json({ success: false, message: 'Assinatura inválida' });
-    }
-  }
-
-  let payload;
-  try {
-    payload = JSON.parse(rawBody.toString('utf8'));
-  } catch (error) {
-    console.error('❌ Erro ao analisar payload do Hotmart:', error);
-    return res.status(400).json({ success: false, message: 'JSON inválido' });
-  }
-
+async function processHotmartEvent(payload) {
   const eventType = getEventType(payload);
   const normalizedStatus = getStatusFromPayload(payload);
   logger.incrementWebhook('hotmart');
-
-  // Log único e conciso
-  console.log(`📨 Webhook Hotmart: ${eventType} | Status: ${normalizedStatus || 'n/d'}`);
+  metrics.increment('webhook_received');
+  metrics.increment('webhook_hotmart');
 
   let action = null;
   let actionSource = null;
@@ -78,161 +51,118 @@ router.post('/', async (req, res) => {
   }
 
   if (!action) {
-    console.log(`⚠️ Evento ignorado: ${eventType || normalizedStatus || 'desconhecido'}`);
-    return res.status(202).json({
-      success: true,
-      message: `Evento ignorado: ${eventType || normalizedStatus || 'desconhecido'}`
-    });
-  }
-
-  if (actionSource === 'status') {
-    console.log(`⚠️ Ação por status: ${normalizedStatus} | Evento: ${eventType || 'n/d'}`);
+    return { ignored: true, action: null };
   }
 
   const subscriberData = extractSubscriberData(payload);
   const sanitizedEmail = sanitizeEmail(subscriberData.email);
   const sanitizedName = sanitizeText(subscriberData.name || sanitizedEmail, 255);
   const sanitizedPhone = sanitizeText(subscriberData.phone || '', 30);
-  console.log(`👤 Dados: ${subscriberData.email} | ${subscriberData.phone || 'sem tel'} | ${subscriberData.name}`);
-  logger.info('webhook_hotmart_received', {
-    event_type: eventType || 'n/d',
-    status: normalizedStatus || 'n/d',
-    email: sanitizedEmail
-  });
 
   if (!sanitizedEmail) {
-    return res.status(400).json({ success: false, message: 'Email não encontrado no payload' });
+    const err = new Error('Email não encontrado no payload');
+    err.statusCode = 400;
+    throw err;
   }
 
   const plan = resolvePlanFromMapping(PLAN_MAPPING, subscriberData, DEFAULT_PLAN);
-  console.log(`📋 Plano: ${plan}`);
 
   if (!plan) {
-    return res.status(422).json({ success: false, message: 'Plano não configurado para o evento recebido' });
+    const err = new Error('Plano não configurado para o evento recebido');
+    err.statusCode = 422;
+    throw err;
+  }
+
+  if (action === 'activation') {
+    const record = await db.upsertSubscriberFromHotmart({
+      name: sanitizedName,
+      email: sanitizedEmail,
+      phone: sanitizedPhone,
+      plan,
+      status: 'active'
+    });
+
+    if (record?.id) {
+      cache.invalidate(`sub:${record.id}`);
+    }
+
+    logger.info('webhook_hotmart_processed', {
+      action: 'activation',
+      email: sanitizedEmail,
+      plan: sanitizeText(plan, 255),
+      subscriber_id: record?.id || null
+    });
+
+    return { action: 'activated', subscriberId: record?.id || null, plan };
+  }
+
+  const record = await db.deactivateSubscriberByEmail(sanitizedEmail, { plan: sanitizeText(plan, 255) });
+  if (record?.id) cache.invalidate(`sub:${record.id}`);
+
+  logger.info('webhook_hotmart_processed', {
+    action: 'deactivation',
+    email: sanitizedEmail,
+    plan: sanitizeText(plan, 255),
+    subscriber_id: record?.id || null
+  });
+
+  return { action: 'deactivated', subscriberId: record?.id || null, plan };
+}
+
+router.post('/', async (req, res) => {
+  const rawBody = Buffer.isBuffer(req.body) ? req.body : Buffer.from(req.body || '');
+  const signature = req.get('X-Hotmart-Hmac-SHA256') || req.get('X-Hotmart-Hmac-Sha256') || req.get('X-Hotmart-Hottok');
+  const hottok = req.get('X-Hotmart-Hottok');
+
+  if (hottok) {
+    if (hottok !== WEBHOOK_SECRET) {
+      return res.status(401).json({ success: false, message: 'Hottok inválido' });
+    }
+  } else if (!verifyHotmartSignature(rawBody, signature, WEBHOOK_SECRET)) {
+    return res.status(401).json({ success: false, message: 'Assinatura inválida' });
+  }
+
+  let payload;
+  try {
+    payload = JSON.parse(rawBody.toString('utf8'));
+  } catch (_error) {
+    return res.status(400).json({ success: false, message: 'JSON inválido' });
   }
 
   try {
-    if (action === 'activation') {
-      const dataToInsert = {
-        name: subscriberData.name || subscriberData.email,
-        email: sanitizedEmail,
-        phone: sanitizedPhone,
-        plan,
-        status: 'active'
-      };
-      dataToInsert.name = sanitizedName;
-
-      const record = await db.upsertSubscriberFromHotmart(dataToInsert);
-      if (record?.id) {
-        cache.invalidate(`sub:${record.id}`);
-        const linkedUsers = await db.pool.query(
-          'SELECT telegram_id FROM authorized_users WHERE subscriber_id = $1',
-          [record.id]
-        );
-        linkedUsers.rows.forEach((row) => {
-          if (row.telegram_id) {
-            cache.invalidate(`user:tg:${row.telegram_id}`);
-          }
-        });
-      }
-      console.log(`✅ Ativado: ${subscriberData.email} | ID: ${record?.id} | Plano: ${plan}`);
-      logger.info('webhook_hotmart_processed', {
-        action: 'activation',
-        email: sanitizedEmail,
-        plan: sanitizeText(plan, 255),
-        subscriber_id: record?.id || null
-      });
-
-      await db.pool.query(
-        `INSERT INTO authorization_logs (telegram_id, subscriber_id, action, user_agent, timestamp)
-         VALUES ($1, $2, $3, $4, NOW())`,
-        [
-          'HOTMART',
-          record?.id || null,
-          'authorized',
-          `Evento: ${eventType || 'n/d'}, Status: ${normalizedStatus || 'n/d'}, Origem: ${actionSource}`
-        ]
-      );
-
-      return res.json({ success: true, action: 'activated', subscriberId: record?.id || null, plan });
+    const result = await processHotmartEvent(payload);
+    if (result.ignored) {
+      return res.status(202).json({ success: true, message: 'Evento ignorado' });
     }
-
-    if (action === 'deactivation') {
-      const record = await db.deactivateSubscriberByEmail(sanitizedEmail, { plan: sanitizeText(plan, 255) });
-      if (record?.id) {
-        cache.invalidate(`sub:${record.id}`);
-        const linkedUsers = await db.pool.query(
-          'SELECT telegram_id FROM authorized_users WHERE subscriber_id = $1',
-          [record.id]
-        );
-        linkedUsers.rows.forEach((row) => {
-          if (row.telegram_id) {
-            cache.invalidate(`user:tg:${row.telegram_id}`);
-          }
-        });
-      }
-      const remainingPlans = (record?.plan || '')
-        .split(',')
-        .map((p) => p.trim())
-        .filter(Boolean);
-      const noChanges = !record || (plan && !record.planRevoked);
-      const deactivationAction =
-        noChanges || !plan
-          ? 'deactivated'
-          : remainingPlans.length > 0
-            ? 'plan_revoked'
-            : 'deactivated';
-      const responseAction = noChanges ? 'ignored' : deactivationAction;
-
-      const logSuffix = noChanges
-        ? `Nenhuma alteração realizada${plan ? ` para o plano ${plan}` : ''}`
-        : deactivationAction === 'plan_revoked'
-          ? `Plano removido: ${plan} | Planos restantes: ${remainingPlans.join(', ') || 'nenhum'}`
-          : 'Assinante totalmente desativado';
-
-      console.log(`⚠️ Desativado: ${subscriberData.email} | ID: ${record?.id || 'n/d'} | ${logSuffix}`);
-      logger.info('webhook_hotmart_processed', {
-        action: 'deactivation',
-        email: sanitizedEmail,
-        plan: sanitizeText(plan, 255),
-        subscriber_id: record?.id || null
-      });
-
-      if (!noChanges) {
-        await db.pool.query(
-          `INSERT INTO authorization_logs (telegram_id, subscriber_id, action, user_agent, timestamp)
-           VALUES ($1, $2, $3, $4, NOW())`,
-          [
-            'HOTMART',
-            record?.id || null,
-            'revoked',
-            `Evento: ${eventType || 'n/d'}, Status: ${normalizedStatus || 'n/d'}, Origem: ${actionSource}`
-          ]
-        );
-      }
-
-      return res.json({
-        success: true,
-        action: responseAction,
-        subscriberId: record?.id || null,
-        plan
-      });
-    }
+    return res.json({ success: true, ...result });
   } catch (error) {
-    console.error('❌ Erro ao processar evento do Hotmart:', error);
-    logger.error('webhook_hotmart_error', {
-      event_type: eventType || 'n/d',
-      status: normalizedStatus || 'n/d',
-      email: sanitizedEmail,
-      error: error.message
-    });
-    return res.status(500).json({ success: false, message: 'Erro interno ao processar evento' });
+    metrics.increment('webhook_errors');
+    alerts.send('WEBHOOK_ERROR', `Webhook hotmart falhou para email ${sanitizeEmail(payload?.buyer?.email || payload?.subscriber?.email || '')}: ${error.message}`, 2 * 60 * 1000);
+    webhookQueue.enqueue({ type: 'hotmart', payload: payload || {}, error: error.message });
+    logger.error('webhook_hotmart_error', { error: error.message });
+    return res.status(error.statusCode || 500).json({ success: false, message: 'Erro interno ao processar evento' });
   }
-
-  return res.status(202).json({
-    success: true,
-    message: `Evento ignorado: ${eventType || normalizedStatus || 'desconhecido'}`
-  });
 });
 
+const retryInterval = setInterval(async () => {
+  const item = webhookQueue.dequeue();
+  if (!item || item.type !== 'hotmart') return;
+
+  try {
+    logger.info('webhook_retry', { type: item.type, attempt: item.attempt });
+    await processHotmartEvent(item.payload);
+  } catch (error) {
+    if (item.attempt < webhookQueue.maxRetries) {
+      webhookQueue.enqueue({ ...item, error: error.message, attempt: item.attempt });
+    } else {
+      webhookQueue.moveToDeadLetter(item, error);
+    }
+  }
+}, 30000);
+
+function stopWebhookRetryInterval() {
+  clearInterval(retryInterval);
+}
+
 module.exports = router;
+module.exports.stopWebhookRetryInterval = stopWebhookRetryInterval;

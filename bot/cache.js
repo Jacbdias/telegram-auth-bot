@@ -1,3 +1,4 @@
+const metrics = require('../shared/metrics-collector');
 class SimpleCache {
   constructor(defaultTTL = 300000) {
     this.cache = new Map();
@@ -10,14 +11,17 @@ class SimpleCache {
     const entry = this.cache.get(key);
     if (!entry) {
       this.misses += 1;
+      metrics.increment('cache_misses');
       return null;
     }
     if (Date.now() > entry.expiresAt) {
       this.cache.delete(key);
       this.misses += 1;
+      metrics.increment('cache_misses');
       return null;
     }
     this.hits += 1;
+    metrics.increment('cache_hits');
     return entry.value;
   }
 
