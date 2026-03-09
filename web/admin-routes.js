@@ -1,6 +1,7 @@
 const express = require('express');
 const defaultDb = require('./database');
 const passwordUtils = require('./passwords');
+const cache = require('../bot/cache');
 
 function createAdminRouter({ db = defaultDb, passwords = passwordUtils } = {}) {
   const router = express.Router();
@@ -96,6 +97,39 @@ function createAdminRouter({ db = defaultDb, passwords = passwordUtils } = {}) {
   };
 
   // ============== DASHBOARD ==============
+
+  const parsePositiveInt = (value, fallback) => {
+    const parsed = Number.parseInt(value, 10);
+    if (Number.isNaN(parsed) || parsed <= 0) {
+      return fallback;
+    }
+    return parsed;
+  };
+
+  router.get('/bootstrap', adminAuth, async (req, res) => {
+    try {
+      const limit = Math.min(parsePositiveInt(req.query.limit, 200), 500);
+      const page = parsePositiveInt(req.query.page, 1);
+      const offset = (page - 1) * limit;
+
+      const [stats, subscribers, channels, recentLogs] = await Promise.all([
+        db.getStats(),
+        db.getAllSubscribers({ limit, offset }),
+        db.getAllChannels({ limit: 500 }),
+        db.getAuthorizationLogs()
+      ]);
+
+      res.json({
+        stats,
+        subscribers,
+        channels,
+        recentLogs,
+        pagination: { page, limit }
+      });
+    } catch (error) {
+      res.status(500).json({ error: error.message });
+    }
+  });
 
   // Estatísticas gerais
   router.get('/stats', adminAuth, async (req, res) => {
@@ -214,7 +248,10 @@ function createAdminRouter({ db = defaultDb, passwords = passwordUtils } = {}) {
   // Listar todos os assinantes
   router.get('/subscribers', adminAuth, async (req, res) => {
     try {
-      const subscribers = await db.getAllSubscribers();
+      const limit = Math.min(parsePositiveInt(req.query.limit, 200), 500);
+      const page = parsePositiveInt(req.query.page, 1);
+      const offset = (page - 1) * limit;
+      const subscribers = await db.getAllSubscribers({ limit, offset });
       res.json(subscribers);
     } catch (error) {
       res.status(500).json({ error: error.message });
@@ -336,7 +373,8 @@ function createAdminRouter({ db = defaultDb, passwords = passwordUtils } = {}) {
   // Listar todos os canais
   router.get('/channels', adminAuth, async (req, res) => {
     try {
-      const channels = await db.getAllChannels();
+      const limit = Math.min(parsePositiveInt(req.query.limit, 500), 500);
+      const channels = await db.getAllChannels({ limit });
       res.json(channels);
     } catch (error) {
       res.status(500).json({ error: error.message });
@@ -356,6 +394,7 @@ function createAdminRouter({ db = defaultDb, passwords = passwordUtils } = {}) {
         order_index,
         joinRequest
       );
+      cache.invalidate('channels:required');
       res.json({ success: true, channel: result });
     } catch (error) {
       res.status(500).json({ error: error.message });
@@ -378,6 +417,7 @@ function createAdminRouter({ db = defaultDb, passwords = passwordUtils } = {}) {
         isActive,
         joinRequest
       );
+      cache.invalidate('channels:required');
       res.json({ success: true });
     } catch (error) {
       res.status(500).json({ error: error.message });
@@ -388,6 +428,7 @@ function createAdminRouter({ db = defaultDb, passwords = passwordUtils } = {}) {
   router.delete('/channels/:id', adminAuth, async (req, res) => {
     try {
       await db.deleteChannel(req.params.id);
+      cache.invalidate('channels:required');
       res.json({ success: true });
     } catch (error) {
       res.status(500).json({ error: error.message });
@@ -796,8 +837,10 @@ router.post('/subscribers/import', adminAuth, async (req, res) => {
     };
 
     // 1. Busca todos os assinantes atuais no banco
-    const currentSubscribers = await db.getAllSubscribers();
+    const currentSubscribers = await db.getAllSubscribers({ limit: 5000, offset: 0 });
     const csvEmails = new Set(subscribers.map(s => s.email?.toLowerCase().trim()).filter(Boolean));
+    const existingSubscribers = await db.getSubscribersByEmails([...csvEmails]);
+    const existingByEmail = new Map(existingSubscribers.map((item) => [item.email, item]));
     
     // 2. Identifica quem deve ser removido (está no banco mas não está no CSV)
     const subscribersToRemove = currentSubscribers.filter((sub) => {
@@ -827,7 +870,8 @@ router.post('/subscribers/import', adminAuth, async (req, res) => {
         }
 
         // Verifica se já existe
-        const existing = await db.getSubscriberByEmail(sub.email);
+        const normalizedEmail = (sub.email || '').toLowerCase().trim();
+        const existing = existingByEmail.get(normalizedEmail) || null;
         
         if (existing) {
           // Atualiza existente
@@ -853,6 +897,9 @@ router.post('/subscribers/import', adminAuth, async (req, res) => {
             sub.phone,
             sub.plan
           );
+          if (normalizedEmail) {
+            existingByEmail.set(normalizedEmail, { email: normalizedEmail });
+          }
           results.success++;
           results.details.push({
             email: sub.email,

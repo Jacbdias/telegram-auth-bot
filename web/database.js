@@ -4,6 +4,9 @@ const { normalizePhone, phonesMatch } = require('./phone-utils');
 // Configuração do pool de conexões PostgreSQL
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
+  max: 5,
+  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 10000,
   ssl: {
     rejectUnauthorized: false
   }
@@ -61,6 +64,11 @@ async function ensureSchema() {
     await pool.query(
       `CREATE INDEX IF NOT EXISTS idx_user_invite_links_telegram
        ON user_invite_links(telegram_id)`
+    );
+
+    await pool.query(
+      `CREATE INDEX IF NOT EXISTS idx_users_email_lower
+       ON subscribers (LOWER(TRIM(email)))`
     );
 
     const requiredChannels = [
@@ -179,6 +187,8 @@ function mergePlanValues(existingPlan, incomingPlan) {
 }
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const LAST_ADMIN_LOGIN_TOUCH_WINDOW_MS = 5 * 60 * 1000;
+const lastAdminLoginTouchById = new Map();
 
 // ============== ADMIN USERS ==============
 
@@ -205,7 +215,8 @@ async function listAdminUsers() {
     const result = await pool.query(
       `SELECT id, username, created_at, updated_at, last_login
        FROM admin_users
-       ORDER BY username ASC`
+       ORDER BY username ASC
+       LIMIT 200`
     );
 
     return result.rows;
@@ -253,12 +264,21 @@ async function updateAdminUserPassword(id, passwordHash) {
 // Atualiza última data de login do admin
 async function touchAdminLastLogin(id) {
   try {
+    const now = Date.now();
+    const lastTouchedAt = lastAdminLoginTouchById.get(id) || 0;
+
+    if (now - lastTouchedAt < LAST_ADMIN_LOGIN_TOUCH_WINDOW_MS) {
+      return;
+    }
+
     await pool.query(
       `UPDATE admin_users
        SET last_login = NOW()
        WHERE id = $1`,
       [id]
     );
+
+    lastAdminLoginTouchById.set(id, now);
   } catch (error) {
     console.error('Erro ao atualizar último login do admin:', error);
     throw error;
@@ -299,7 +319,7 @@ async function getSubscriberByEmailAndPhone(email, phone) {
     const result = await pool.query(
       `SELECT id, name, email, phone, plan, status, origin
        FROM subscribers
-       WHERE LOWER(TRIM(email)) = $1
+       WHERE email = $1
          AND status = 'active'`,
       [normalizedEmail]
     );
@@ -399,7 +419,8 @@ async function getUserChannels(plan) {
       `SELECT id, name, chat_id, description, plan, order_index, active, creates_join_request
        FROM channels
        WHERE (plan = 'all' OR plan = ANY($1)) AND active = true
-       ORDER BY order_index ASC`,
+       ORDER BY order_index ASC
+       LIMIT 500`,
       [planList]
     );
 
@@ -432,7 +453,9 @@ async function getActiveInviteLinksByTelegramId(telegramId) {
        FROM user_invite_links uil
        JOIN channels c ON c.id = uil.channel_id
        WHERE uil.telegram_id = $1
-         AND uil.revoked_at IS NULL`,
+         AND uil.revoked_at IS NULL
+       ORDER BY uil.created_at DESC
+       LIMIT 500`,
       [telegramId]
     );
 
@@ -667,6 +690,7 @@ async function getStats() {
 
 async function upsertSubscriberFromHotmart({ name, email, phone, plan, status = 'active' }) {
   const normalizedEmail = normalizeEmail(email);
+  // email normalizado no write
 
   if (!normalizedEmail) {
     throw new Error('Email é obrigatório para sincronizar assinante');
@@ -717,13 +741,35 @@ async function getSubscriberByEmail(email) {
     const result = await pool.query(
       `SELECT id, name, email, phone, plan, status, origin
        FROM subscribers
-       WHERE LOWER(TRIM(email)) = $1`,
+       WHERE email = $1`,
       [normalizeEmail(email)]
     );
 
     return result.rows.length > 0 ? result.rows[0] : null;
   } catch (error) {
     console.error('Erro ao buscar assinante por email:', error);
+    throw error;
+  }
+}
+
+async function getSubscribersByEmails(emails = []) {
+  const normalizedEmails = [...new Set((emails || []).map((email) => normalizeEmail(email)).filter(Boolean))];
+
+  if (normalizedEmails.length === 0) {
+    return [];
+  }
+
+  try {
+    const result = await pool.query(
+      `SELECT id, name, email, phone, plan, status, origin
+       FROM subscribers
+       WHERE email = ANY($1::text[])`,
+      [normalizedEmails]
+    );
+
+    return result.rows;
+  } catch (error) {
+    console.error('Erro ao buscar assinantes por email:', error);
     throw error;
   }
 }
@@ -744,7 +790,7 @@ async function deactivateSubscriberByEmail(email, { plan } = {}) {
     const subscriberResult = await client.query(
       `SELECT id, name, email, phone, plan, status, origin
        FROM subscribers
-       WHERE LOWER(TRIM(email)) = $1`,
+       WHERE email = $1`,
       [normalizedEmail]
     );
 
@@ -910,12 +956,14 @@ async function revokeUserAccess(subscriberId) {
 }
 
 // Busca todos os usuários que já foram autorizados alguma vez
-async function getAllAuthorizedUsers() {
+async function getAllAuthorizedUsers({ limit = 500 } = {}) {
   try {
     const result = await pool.query(
       `SELECT DISTINCT au.telegram_id, s.name, s.email, au.authorized
        FROM authorized_users au
-       LEFT JOIN subscribers s ON au.subscriber_id = s.id`
+       LEFT JOIN subscribers s ON au.subscriber_id = s.id
+       LIMIT $1`,
+      [limit]
     );
 
     return result.rows;
@@ -928,7 +976,7 @@ async function getAllAuthorizedUsers() {
 // ============== FUNÇÕES ADMIN ==============
 
 // Listar todos os assinantes
-async function getAllSubscribers() {
+async function getAllSubscribers({ limit = 500, offset = 0 } = {}) {
   try {
     const result = await pool.query(
       `SELECT s.*, 
@@ -937,7 +985,9 @@ async function getAllSubscribers() {
               au.authorized_at
        FROM subscribers s
        LEFT JOIN authorized_users au ON s.id = au.subscriber_id
-       ORDER BY s.created_at DESC`
+       ORDER BY s.created_at DESC
+       LIMIT $1 OFFSET $2`,
+      [limit, offset]
     );
     return result.rows;
   } catch (error) {
@@ -963,6 +1013,7 @@ async function getSubscriberById(id) {
 // Criar novo assinante
 async function createSubscriber(name, email, phone, plan) {
   const normalizedEmail = normalizeEmail(email);
+  // email normalizado no write
   const normalizedPhone = normalizePhone(phone);
   const sanitizedName = name?.trim() || normalizedEmail;
   const formattedPlan = formatPlanList(plan);
@@ -975,7 +1026,7 @@ async function createSubscriber(name, email, phone, plan) {
     const existingResult = await client.query(
       `SELECT id, plan
        FROM subscribers
-       WHERE LOWER(TRIM(email)) = $1
+       WHERE email = $1
        LIMIT 1`,
       [normalizedEmail]
     );
@@ -1027,6 +1078,7 @@ async function updateSubscriber(id, name, email, phone, plan, status) {
   const client = await pool.connect();
   const formattedPlan = formatPlanList(plan);
   const normalizedEmail = normalizeEmail(email);
+  // email normalizado no write
   const normalizedPhone = normalizePhone(phone);
   const trimmedName = name?.trim();
 
@@ -1119,11 +1171,12 @@ async function updateSubscriber(id, name, email, phone, plan, status) {
 }
 
 // Listar todos os canais
-async function getAllChannels() {
+async function getAllChannels({ limit = 500 } = {}) {
   try {
     await schemaReady;
     const result = await pool.query(
-      'SELECT * FROM channels ORDER BY plan, order_index'
+      'SELECT * FROM channels ORDER BY plan, order_index LIMIT $1',
+      [limit]
     );
     return result.rows;
   } catch (error) {
@@ -1207,6 +1260,7 @@ module.exports = {
   getSubscriberByEmailAndPhone,
   upsertSubscriberFromHotmart,
   getSubscriberByEmail,
+  getSubscribersByEmails,
   getUserByTelegramId,
   getUserBySubscriberId,
   authorizeUser,

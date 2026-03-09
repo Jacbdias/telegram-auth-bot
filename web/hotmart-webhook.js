@@ -1,5 +1,6 @@
 const express = require('express');
 const db = require('./database');
+const cache = require('../bot/cache');
 const {
   ACTIVATION_EVENTS,
   DEACTIVATION_EVENTS,
@@ -110,6 +111,18 @@ router.post('/', async (req, res) => {
       };
 
       const record = await db.upsertSubscriberFromHotmart(dataToInsert);
+      if (record?.id) {
+        cache.invalidate(`sub:${record.id}`);
+        const linkedUsers = await db.pool.query(
+          'SELECT telegram_id FROM authorized_users WHERE subscriber_id = $1',
+          [record.id]
+        );
+        linkedUsers.rows.forEach((row) => {
+          if (row.telegram_id) {
+            cache.invalidate(`user:tg:${row.telegram_id}`);
+          }
+        });
+      }
       console.log(`✅ Ativado: ${subscriberData.email} | ID: ${record?.id} | Plano: ${plan}`);
 
       await db.pool.query(
@@ -128,6 +141,18 @@ router.post('/', async (req, res) => {
 
     if (action === 'deactivation') {
       const record = await db.deactivateSubscriberByEmail(subscriberData.email, { plan });
+      if (record?.id) {
+        cache.invalidate(`sub:${record.id}`);
+        const linkedUsers = await db.pool.query(
+          'SELECT telegram_id FROM authorized_users WHERE subscriber_id = $1',
+          [record.id]
+        );
+        linkedUsers.rows.forEach((row) => {
+          if (row.telegram_id) {
+            cache.invalidate(`user:tg:${row.telegram_id}`);
+          }
+        });
+      }
       const remainingPlans = (record?.plan || '')
         .split(',')
         .map((p) => p.trim())
