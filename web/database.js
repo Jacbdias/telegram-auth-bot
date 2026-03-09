@@ -1,6 +1,21 @@
 const { Pool } = require('pg');
 const { normalizePhone, phonesMatch } = require('./phone-utils');
 const logger = require('../shared/logger');
+const alerts = require('../shared/alerts');
+const metrics = require('../shared/metrics-collector');
+const { withRetry } = require('../shared/retry');
+const CircuitBreaker = require('../shared/circuit-breaker');
+
+
+const RETRYABLE_DB_ERRORS = ['ECONNREFUSED', 'ECONNRESET', 'ETIMEDOUT', '57P01', '08006', 'too many clients'];
+const circuitBreaker = new CircuitBreaker();
+
+function isRetryableDbError(error) {
+  const message = String(error && error.message ? error.message : '').toLowerCase();
+  return RETRYABLE_DB_ERRORS.some((code) =>
+    error?.code === code || message.includes(String(code).toLowerCase())
+  );
+}
 
 // Configuração do pool de conexões PostgreSQL
 const pool = new Pool({
@@ -16,22 +31,72 @@ const pool = new Pool({
 async function timedQuery(name, text, params = []) {
   const start = Date.now();
 
+  if (!circuitBreaker.canExecute()) {
+    throw new Error('Circuit breaker OPEN — banco temporariamente indisponível');
+  }
+
+  const previousState = circuitBreaker.getState().state;
+
   try {
-    const result = await pool.query(text, params);
+    const result = await withRetry(
+      async (attempt) => {
+        if (attempt > 1) {
+          logger.warn('query_retry', { name, attempt });
+        }
+        return pool.query(text, params);
+      },
+      {
+        maxRetries: 3,
+        baseDelayMs: 500,
+        maxDelayMs: 2000,
+        retryableErrors: RETRYABLE_DB_ERRORS,
+        onRetry: async (error, attempt) => {
+          logger.warn('query_retry', { name, attempt, error: error.message });
+        }
+      }
+    );
+
     const duration = Date.now() - start;
 
     logger.query(name, duration, { rows: result.rowCount });
+    metrics.recordLatency('db', duration);
 
     if (duration > 500) {
       logger.incrementSlowQuery();
+      metrics.increment('slow_queries');
       logger.warn('slow_query', { name, duration_ms: duration, rows: result.rowCount });
+    }
+
+    if (duration > 2000) {
+      alerts.send(`SLOW_QUERY:${name}`, `Query ${name} levou ${duration}ms (${result.rowCount || 0} rows)`, 5 * 60 * 1000);
+    }
+
+    circuitBreaker.recordSuccess();
+    if (previousState !== 'CLOSED' && circuitBreaker.getState().state === 'CLOSED') {
+      alerts.send('CIRCUIT_BREAKER_CLOSED', 'Circuit breaker fechou. Banco normalizado.', 0);
     }
 
     return result;
   } catch (error) {
     const duration = Date.now() - start;
     logger.incrementQueryError();
+    metrics.increment('query_errors');
     logger.error('query_error', { name, duration_ms: duration, error: error.message });
+
+    if (isRetryableDbError(error)) {
+      circuitBreaker.recordFailure();
+      alerts.send('DATABASE_ERROR', `Falha na query ${name}: ${error.message}`, 5 * 60 * 1000);
+
+      const breakerState = circuitBreaker.getState();
+      if (breakerState.state === 'OPEN') {
+        alerts.send(
+          'CIRCUIT_BREAKER_OPEN',
+          `Circuit breaker ABERTO após ${breakerState.failures} falhas. Banco pode estar instável.`,
+          5 * 60 * 1000
+        );
+      }
+    }
+
     throw error;
   }
 }
@@ -1306,6 +1371,8 @@ module.exports = {
   pool,
   healthCheckQuery,
   getPoolStats,
+  getCircuitBreakerState: () => circuitBreaker.getState(),
+  isRetryableDbError,
   // Admins
   getAdminUserByUsername,
   listAdminUsers,

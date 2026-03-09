@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Métricas Operacionais</title>
+  <style>
+    body { font-family: Arial, sans-serif; background:#0f172a; color:#e2e8f0; margin:0; padding:20px; }
+    .top { display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; }
+    .cards { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin-bottom:20px; }
+    .card { background:#1e293b; padding:14px; border-radius:10px; }
+    canvas, table { width:100%; background:#1e293b; border-radius:10px; margin-bottom:16px; }
+    table { border-collapse: collapse; }
+    th, td { padding:8px; border-bottom:1px solid #334155; text-align:left; }
+    a { color:#93c5fd; }
+  </style>
+</head>
+<body>
+  <div class="top"><h1>Dashboard de Métricas</h1><a href="/admin.html">← Voltar</a></div>
+  <div class="cards" id="cards"></div>
+  <canvas id="requests" height="180"></canvas>
+  <canvas id="webhooks" height="180"></canvas>
+  <canvas id="slow" height="180"></canvas>
+  <canvas id="db" height="180"></canvas>
+  <table>
+    <thead><tr><th>Dia</th><th>Requests</th><th>Webhooks</th><th>Autorizações</th><th>Revogações</th><th>Erros</th></tr></thead>
+    <tbody id="daily"></tbody>
+  </table>
+<script>
+const token = localStorage.getItem('adminToken') || '';
+async function load(){
+  const res = await fetch('/api/admin/metrics',{headers:{Authorization:`Bearer ${token}`}});
+  if(res.status===401){ location.href='/admin.html'; return; }
+  const data = await res.json();
+  renderCards(data.current);
+  draw('requests',data.hourly,'http_requests','#22d3ee');
+  draw('webhooks',data.hourly,'webhook_received','#34d399');
+  draw('slow',data.hourly,'slow_queries','#fbbf24');
+  draw('db',data.hourly,'db_latency_avg','#f87171');
+  const rows=data.daily.slice(-7).reverse().map(d=>`<tr><td>${d.day}</td><td>${d.http_requests||0}</td><td>${d.webhook_received||0}</td><td>${d.users_authorized||0}</td><td>${d.users_revoked||0}</td><td>${d.http_errors||0}</td></tr>`).join('');
+  document.getElementById('daily').innerHTML=rows;
+}
+function renderCards(c){
+  const rate=(c.cache.hits+c.cache.misses)?((c.cache.hits*100)/(c.cache.hits+c.cache.misses)).toFixed(1):'0.0';
+  document.getElementById('cards').innerHTML=`
+  <div class='card'><b>Uptime</b><div>${c.uptime_seconds}s</div></div>
+  <div class='card'><b>Memória</b><div>${c.memory_mb} MB</div></div>
+  <div class='card'><b>Cache hit rate</b><div>${rate}%</div></div>
+  <div class='card'><b>Pool</b><div>${c.pool.total}/${c.pool.idle}/${c.pool.waiting}</div></div>`;
+}
+function draw(id,list,key,color){
+  const canvas=document.getElementById(id); const ctx=canvas.getContext('2d');
+  const values=list.map(i=>i[key]||0); const max=Math.max(1,...values);
+  ctx.clearRect(0,0,canvas.width,canvas.height); ctx.strokeStyle=color; ctx.lineWidth=2; ctx.beginPath();
+  values.forEach((v,i)=>{const x=(i/(values.length-1||1))*canvas.width; const y=canvas.height-((v/max)*(canvas.height-20))-10; i?ctx.lineTo(x,y):ctx.moveTo(x,y);});
+  ctx.stroke(); ctx.fillStyle='#cbd5e1'; ctx.fillText(key,10,14);
+}
+load(); setInterval(load,60000);
+</script>
+</body>
+</html>
