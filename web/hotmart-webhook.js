@@ -86,6 +86,17 @@ async function processHotmartEvent(payload) {
       cache.invalidate(`sub:${record.id}`);
     }
 
+    if (record?.id) {
+      await db.logWebhookAuthorization({
+        subscriberId: record.id,
+        action: 'authorized',
+        platform: 'HOTMART',
+        eventType,
+        status: normalizedStatus,
+        source: actionSource
+      });
+    }
+
     logger.info('webhook_hotmart_processed', {
       action: 'activation',
       email: sanitizedEmail,
@@ -97,6 +108,16 @@ async function processHotmartEvent(payload) {
   }
 
   const record = await db.deactivateSubscriberByEmail(sanitizedEmail, { plan: sanitizeText(plan, 255) });
+  if (record?.id) {
+    await db.logWebhookAuthorization({
+      subscriberId: record.id,
+      action: 'revoked',
+      platform: 'HOTMART',
+      eventType,
+      status: normalizedStatus,
+      source: actionSource
+    });
+  }
   if (record?.id) cache.invalidate(`sub:${record.id}`);
 
   logger.info('webhook_hotmart_processed', {

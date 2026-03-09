@@ -467,6 +467,11 @@ tbody td {
   color: #92400e;
 }
 
+.badge-muted {
+  background: rgba(148, 163, 184, 0.25);
+  color: #475569;
+}
+
 .actions {
   display: flex;
   gap: 10px;

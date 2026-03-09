@@ -850,6 +850,45 @@ async function upsertSubscriberFromHotmart({ name, email, phone, plan, status = 
   }
 }
 
+async function logWebhookAuthorization({
+  subscriberId,
+  action,
+  platform,
+  eventType,
+  status,
+  source
+}) {
+  if (!subscriberId || !action) {
+    return null;
+  }
+
+  const result = await timedQuery(
+    'log_webhook_authorization',
+    `WITH subscriber_telegram AS (
+       SELECT NULLIF(TRIM(au.telegram_id), '') AS telegram_id
+       FROM subscribers s
+       LEFT JOIN authorized_users au ON au.subscriber_id = s.id
+       WHERE s.id = $1
+       LIMIT 1
+     )
+     INSERT INTO authorization_logs (telegram_id, subscriber_id, action, user_agent, timestamp)
+     SELECT COALESCE(st.telegram_id, 'PENDENTE'),
+            $1,
+            $2,
+            $3,
+            NOW()
+     FROM subscriber_telegram st
+     RETURNING id, telegram_id, subscriber_id, action`,
+    [
+      subscriberId,
+      action,
+      `Evento: ${eventType || 'unknown'}, Status: ${status || 'unknown'}, Origem: ${source || 'unknown'}, Plataforma: ${platform || 'UNKNOWN'}`
+    ]
+  );
+
+  return result.rows[0] || null;
+}
+
 // Busca assinante apenas por email
 async function getSubscriberByEmail(email) {
   try {
@@ -1384,6 +1423,7 @@ module.exports = {
   getSubscriberByEmailAndPhone,
   upsertSubscriberFromHotmart,
   getSubscriberByEmail,
+  logWebhookAuthorization,
   getSubscribersByEmails,
   getUserByTelegramId,
   getUserBySubscriberId,

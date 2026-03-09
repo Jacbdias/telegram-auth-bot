@@ -1013,13 +1013,19 @@ async function loadLogs(prefetchedLogs = null) {
             const actionBadge = log.action === 'authorized' ? 'badge-success' : 'badge-danger';
             const actionText = log.action === 'authorized' ? 'Autorizado' : 'Revogado';
 
+            const normalizedTelegramId = (log.telegram_id || '').toString().trim().toUpperCase();
+            const isPendingTelegram = ['PENDENTE', 'HOTMART', 'N/A'].includes(normalizedTelegramId);
+            const telegramDisplay = isPendingTelegram
+                ? '<span class="badge badge-muted">Pendente</span>'
+                : `<code>${log.telegram_id}</code>`;
+
             html += `
                 <tr>
                     <td data-label="Data/Hora">${dateStr}</td>
                     <td data-label="Ação"><span class="badge ${actionBadge}">${actionText}</span></td>
                     <td data-label="Nome">${log.name || '-'}</td>
                     <td data-label="Email">${log.email || '-'}</td>
-                    <td data-label="Telegram ID"><code>${log.telegram_id}</code></td>
+                    <td data-label="Telegram ID">${telegramDisplay}</td>
                 </tr>
             `;
         });
