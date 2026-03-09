@@ -1,5 +1,6 @@
 const { Pool } = require('pg');
 const { normalizePhone, phonesMatch } = require('./phone-utils');
+const logger = require('../shared/logger');
 
 // Configuração do pool de conexões PostgreSQL
 const pool = new Pool({
@@ -11,6 +12,43 @@ const pool = new Pool({
     rejectUnauthorized: false
   }
 });
+
+async function timedQuery(name, text, params = []) {
+  const start = Date.now();
+
+  try {
+    const result = await pool.query(text, params);
+    const duration = Date.now() - start;
+
+    logger.query(name, duration, { rows: result.rowCount });
+
+    if (duration > 500) {
+      logger.incrementSlowQuery();
+      logger.warn('slow_query', { name, duration_ms: duration, rows: result.rowCount });
+    }
+
+    return result;
+  } catch (error) {
+    const duration = Date.now() - start;
+    logger.incrementQueryError();
+    logger.error('query_error', { name, duration_ms: duration, error: error.message });
+    throw error;
+  }
+}
+
+async function healthCheckQuery() {
+  const start = Date.now();
+  await pool.query('SELECT 1');
+  return Date.now() - start;
+}
+
+function getPoolStats() {
+  return {
+    total: pool.totalCount,
+    idle: pool.idleCount,
+    waiting: pool.waitingCount
+  };
+}
 
 async function ensureSchema() {
   if (!process.env.DATABASE_URL) {
@@ -212,7 +250,8 @@ async function getAdminUserByUsername(username) {
 // Lista todos os admins (sem senha)
 async function listAdminUsers() {
   try {
-    const result = await pool.query(
+    const result = await timedQuery(
+      'list_admin_users',
       `SELECT id, username, created_at, updated_at, last_login
        FROM admin_users
        ORDER BY username ASC
@@ -316,7 +355,8 @@ async function getSubscriberByEmailAndPhone(email, phone) {
     const normalizedEmail = normalizeEmail(email);
     const normalizedPhone = normalizePhone(phone);
 
-    const result = await pool.query(
+    const result = await timedQuery(
+      'get_subscriber_by_email_and_phone',
       `SELECT id, name, email, phone, plan, status, origin
        FROM subscribers
        WHERE email = $1
@@ -344,7 +384,8 @@ async function getSubscriberByEmailAndPhone(email, phone) {
 // Busca usuário autorizado por Telegram ID
 async function getUserByTelegramId(telegramId) {
   try {
-    const result = await pool.query(
+    const result = await timedQuery(
+      'get_user_by_telegram_id',
       `SELECT u.*, s.name, s.email, s.plan, s.status
        FROM authorized_users u
        LEFT JOIN subscribers s ON u.subscriber_id = s.id
@@ -399,6 +440,7 @@ async function authorizeUser(telegramId, subscriber) {
     );
 
     await client.query('COMMIT');
+    logger.incrementAuthAction('authorized');
     return true;
   } catch (error) {
     await client.query('ROLLBACK');
@@ -415,7 +457,8 @@ async function getUserChannels(plan) {
     await schemaReady;
 
     const planList = normalizePlanList(plan);
-    const result = await pool.query(
+    const result = await timedQuery(
+      'get_user_channels',
       `SELECT id, name, chat_id, description, plan, order_index, active, creates_join_request
        FROM channels
        WHERE (plan = 'all' OR plan = ANY($1)) AND active = true
@@ -448,7 +491,8 @@ async function saveUserInviteLink(telegramId, channelId, inviteLink, expireAt) {
 async function getActiveInviteLinksByTelegramId(telegramId) {
   try {
     await schemaReady;
-    const result = await pool.query(
+    const result = await timedQuery(
+      'get_active_invite_links_by_telegram_id',
       `SELECT uil.id, uil.invite_link, uil.channel_id, uil.expire_at, c.chat_id, c.plan, c.active
        FROM user_invite_links uil
        JOIN channels c ON c.id = uil.channel_id
@@ -651,6 +695,8 @@ async function revokeAuthorization(telegramId) {
       [telegramId, subscriberId]
     );
 
+    logger.incrementAuthAction('revoked');
+
     return true;
   } catch (error) {
     console.error('Erro ao revogar autorização:', error);
@@ -661,15 +707,18 @@ async function revokeAuthorization(telegramId) {
 // Busca estatísticas
 async function getStats() {
   try {
-    const totalUsers = await pool.query(
+    const totalUsers = await timedQuery(
+      'get_stats_total_users',
       'SELECT COUNT(*) as count FROM authorized_users WHERE authorized = true'
     );
     
-    const totalSubscribers = await pool.query(
+    const totalSubscribers = await timedQuery(
+      'get_stats_total_subscribers',
       'SELECT COUNT(*) as count FROM subscribers WHERE status = \'active\''
     );
     
-    const byPlan = await pool.query(
+    const byPlan = await timedQuery(
+      'get_stats_by_plan',
       `SELECT s.plan, COUNT(*) as count 
        FROM authorized_users u
        JOIN subscribers s ON u.subscriber_id = s.id
@@ -714,7 +763,8 @@ async function upsertSubscriberFromHotmart({ name, email, phone, plan, status = 
   }
 
   try {
-    const result = await pool.query(
+    const result = await timedQuery(
+      'upsert_subscriber_from_hotmart',
       `INSERT INTO subscribers (name, email, phone, plan, status, origin)
        VALUES ($1, $2, $3, $4, $5, 'hotmart')
        ON CONFLICT (email) DO UPDATE
@@ -738,7 +788,8 @@ async function upsertSubscriberFromHotmart({ name, email, phone, plan, status = 
 // Busca assinante apenas por email
 async function getSubscriberByEmail(email) {
   try {
-    const result = await pool.query(
+    const result = await timedQuery(
+      'get_subscriber_by_email',
       `SELECT id, name, email, phone, plan, status, origin
        FROM subscribers
        WHERE email = $1`,
@@ -760,7 +811,8 @@ async function getSubscribersByEmails(emails = []) {
   }
 
   try {
-    const result = await pool.query(
+    const result = await timedQuery(
+      'get_subscribers_by_emails',
       `SELECT id, name, email, phone, plan, status, origin
        FROM subscribers
        WHERE email = ANY($1::text[])`,
@@ -978,7 +1030,8 @@ async function getAllAuthorizedUsers({ limit = 500 } = {}) {
 // Listar todos os assinantes
 async function getAllSubscribers({ limit = 500, offset = 0 } = {}) {
   try {
-    const result = await pool.query(
+    const result = await timedQuery(
+      'get_all_subscribers',
       `SELECT s.*, 
               au.telegram_id, 
               au.authorized, 
@@ -1174,7 +1227,8 @@ async function updateSubscriber(id, name, email, phone, plan, status) {
 async function getAllChannels({ limit = 500 } = {}) {
   try {
     await schemaReady;
-    const result = await pool.query(
+    const result = await timedQuery(
+      'get_all_channels',
       'SELECT * FROM channels ORDER BY plan, order_index LIMIT $1',
       [limit]
     );
@@ -1233,7 +1287,8 @@ async function deleteChannel(id) {
 // Buscar logs de autorização
 async function getAuthorizationLogs() {
   try {
-    const result = await pool.query(
+    const result = await timedQuery(
+      'get_authorization_logs',
       `SELECT l.*, s.name, s.email 
        FROM authorization_logs l
        LEFT JOIN subscribers s ON l.subscriber_id = s.id
@@ -1249,6 +1304,8 @@ async function getAuthorizationLogs() {
 
 module.exports = {
   pool,
+  healthCheckQuery,
+  getPoolStats,
   // Admins
   getAdminUserByUsername,
   listAdminUsers,

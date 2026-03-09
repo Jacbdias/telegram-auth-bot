@@ -2,6 +2,7 @@ const TelegramBot = require('node-telegram-bot-api');
 const crypto = require('crypto');
 const db = require('../web/database');
 const cache = require('./cache');
+const logger = require('../shared/logger');
 
 const token = process.env.TELEGRAM_BOT_TOKEN;
 const rawWebAppUrl = process.env.WEB_APP_URL;
@@ -23,8 +24,11 @@ async function getCachedUserByTelegramId(telegramId) {
   const cached = cache.get(key);
 
   if (cached) {
+    logger.info('cache_hit_user_telegram', { telegram_id: telegramIdStr });
     return cached;
   }
+
+  logger.info('cache_miss_user_telegram', { telegram_id: telegramIdStr });
 
   const user = await db.getUserByTelegramId(telegramIdStr);
 
@@ -44,8 +48,11 @@ async function getCachedChannelsForPlan(plan) {
   let channels = cache.get(requiredChannelsKey);
 
   if (!channels) {
+    logger.info('cache_miss_channels_required');
     channels = await db.getAllChannels();
     cache.set(requiredChannelsKey, channels, REQUIRED_CHANNELS_CACHE_TTL_MS);
+  } else {
+    logger.info('cache_hit_channels_required');
   }
 
   const planList = String(plan || '')
@@ -84,8 +91,9 @@ async function revokeExistingInvites(telegramId) {
     if (revokedIds.length > 0) {
       await db.markInviteLinksRevoked(revokedIds);
     }
-  } catch (error) {
-    console.error('Erro ao revogar convites existentes:', error.message);
+    } catch (error) {
+      console.error('Erro ao revogar convites existentes:', error.message);
+      logger.error('telegram_revoke_invites_error', { telegram_id: telegramIdStr, error: error.message });
   }
 }
 
@@ -143,6 +151,11 @@ async function generateInviteLinksForUser(telegramId, channels) {
       message += `• ${channel.name}\n  ${inviteLink.invite_link}\n\n`;
     } catch (error) {
       console.error(`Erro ao criar link para ${channel.name}:`, error.message);
+      logger.error('telegram_invite_creation_error', {
+        telegram_id: telegramIdStr,
+        chat_id: channel.chat_id,
+        error: error.message
+      });
       message += `• ${channel.name}\n  ⚠️ Erro ao gerar link\n\n`;
     }
 
@@ -273,6 +286,11 @@ bot.onText(/\/meuscanais/, async (msg) => {
 // Função chamada quando verificação é bem-sucedida
 async function notifyUserAuthorized(telegramId, userData) {
   const channels = await getCachedChannelsForPlan(userData.plan);
+  logger.info('user_authorized', {
+    telegram_id: String(telegramId),
+    plan: userData.plan,
+    channels_affected: channels.length
+  });
 
   await revokeExistingInvites(telegramId);
   const generatedLinksMessage = await generateInviteLinksForUser(telegramId, channels);
@@ -300,6 +318,10 @@ async function notifyUserAuthorized(telegramId, userData) {
     await bot.sendMessage(telegramId, message, { parse_mode: 'Markdown' });
   } catch (error) {
     console.error('Erro ao enviar mensagem de verificação:', error.message);
+    logger.error('telegram_send_message_error', {
+      telegram_id: String(telegramId),
+      error: error.message
+    });
     
     // Fallback: tenta enviar sem formatação
     const plainMessage = 
@@ -351,6 +373,10 @@ function cleanExpiredTokens() {
 
 // Limpa tokens expirados a cada 5 minutos
 setInterval(cleanExpiredTokens, 5 * 60 * 1000);
+
+setInterval(() => {
+  logger.info('cache_stats', cache.getStats());
+}, 5 * 60 * 1000);
 
 // Comando /revogar (apenas para admins)
 bot.onText(/\/revogar (.+)/, async (msg, match) => {
@@ -421,6 +447,12 @@ const adminIds = ['1839742847']; // Seu Telegram ID
 
     // Remove do banco de dados
     await db.revokeUserAccess(subscriber.id);
+    logger.info('user_revoked', {
+      subscriber_id: subscriber.id,
+      telegram_id: authorizedUser?.telegram_id || null,
+      plan: subscriber.plan,
+      channels_affected: removedCount || 0
+    });
 
     // Confirma ao admin
     let confirmMessage = 
@@ -538,6 +570,7 @@ bot.onText(/\/sync/, async (msg) => {
       `✅ Sincronização concluída!\n\n` +
       `👥 Usuários removidos: ${removedCount}`
     );
+    logger.info('sync_revoked_inactive_users', { removed_count: removedCount });
 
   } catch (error) {
     bot.sendMessage(chatId, `❌ Erro: ${error.message}`);

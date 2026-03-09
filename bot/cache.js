@@ -2,15 +2,22 @@ class SimpleCache {
   constructor(defaultTTL = 300000) {
     this.cache = new Map();
     this.defaultTTL = defaultTTL;
+    this.hits = 0;
+    this.misses = 0;
   }
 
   get(key) {
     const entry = this.cache.get(key);
-    if (!entry) return null;
-    if (Date.now() > entry.expiresAt) {
-      this.cache.delete(key);
+    if (!entry) {
+      this.misses += 1;
       return null;
     }
+    if (Date.now() > entry.expiresAt) {
+      this.cache.delete(key);
+      this.misses += 1;
+      return null;
+    }
+    this.hits += 1;
     return entry.value;
   }
 
@@ -29,6 +36,14 @@ class SimpleCache {
     for (const key of this.cache.keys()) {
       if (key.startsWith(prefix)) this.cache.delete(key);
     }
+  }
+
+  getStats() {
+    return {
+      hits: this.hits,
+      misses: this.misses,
+      size: this.cache.size
+    };
   }
 }
 

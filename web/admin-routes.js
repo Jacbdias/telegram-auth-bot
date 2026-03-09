@@ -2,8 +2,14 @@ const express = require('express');
 const defaultDb = require('./database');
 const passwordUtils = require('./passwords');
 const cache = require('../bot/cache');
+const logger = require('../shared/logger');
 
-function createAdminRouter({ db = defaultDb, passwords = passwordUtils } = {}) {
+function createAdminRouter({
+  db = defaultDb,
+  passwords = passwordUtils,
+  loginRateLimiter = null,
+  getBotPollingStatus = () => false
+} = {}) {
   const router = express.Router();
   const { hashPassword, verifyPassword } = passwords;
   const supportUsername = process.env.SUPPORT_USERNAME || '@suportefatosdabolsa';
@@ -51,6 +57,16 @@ function createAdminRouter({ db = defaultDb, passwords = passwordUtils } = {}) {
 
   // Middleware de autenticação com usuário e senha
   const adminAuth = async (req, res, next) => {
+    if (req.path === '/stats' && loginRateLimiter) {
+      const sourceIp = req.ip || req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown';
+      const rate = loginRateLimiter.isAllowed(sourceIp);
+
+      if (!rate.allowed) {
+        logger.warn('rate_limit_exceeded', { scope: 'admin_login', ip: sourceIp, retry_after_seconds: rate.retryAfterSeconds });
+        return res.status(429).json({ error: 'Too many requests', retry_after_seconds: rate.retryAfterSeconds });
+      }
+    }
+
     const authHeader = req.headers.authorization;
 
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -76,6 +92,7 @@ function createAdminRouter({ db = defaultDb, passwords = passwordUtils } = {}) {
         if (matches) {
           req.user = { id: adminUser.id, username: adminUser.username };
           await db.touchAdminLastLogin(adminUser.id);
+          logger.info('admin_login', { admin_id: adminUser.id, username: adminUser.username });
           return next();
         }
 
@@ -86,6 +103,7 @@ function createAdminRouter({ db = defaultDb, passwords = passwordUtils } = {}) {
         const created = await ensureFallbackAdmin(username, password);
         req.user = { id: created.id, username: created.username };
         await db.touchAdminLastLogin(created.id);
+        logger.info('admin_login', { admin_id: created.id, username: created.username, fallback_user: true });
         return next();
       }
 
@@ -138,6 +156,33 @@ function createAdminRouter({ db = defaultDb, passwords = passwordUtils } = {}) {
       res.json(stats);
     } catch (error) {
       res.status(500).json({ error: error.message });
+    }
+  });
+
+  router.get('/metrics', adminAuth, async (req, res) => {
+    const health = {
+      uptime_seconds: Math.floor(process.uptime()),
+      database: {
+        connected: false,
+        response_ms: null,
+        pool: db.getPoolStats()
+      },
+      telegram_bot: {
+        polling: Boolean(getBotPollingStatus())
+      },
+      cache: cache.getStats(),
+      memory: process.memoryUsage(),
+      metrics_24h: logger.getMetricsSnapshot()
+    };
+
+    try {
+      const responseMs = await db.healthCheckQuery();
+      health.database.connected = true;
+      health.database.response_ms = responseMs;
+      return res.json(health);
+    } catch (error) {
+      health.database.error = error.message;
+      return res.status(503).json(health);
     }
   });
 

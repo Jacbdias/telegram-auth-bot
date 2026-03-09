@@ -1,6 +1,8 @@
 const express = require('express');
 const db = require('./database');
 const cache = require('../bot/cache');
+const logger = require('../shared/logger');
+const { sanitizeEmail, sanitizeText } = require('../shared/sanitize');
 const {
   ACTIVATION_EVENTS,
   DEACTIVATION_EVENTS,
@@ -53,6 +55,7 @@ router.post('/', async (req, res) => {
 
   const eventType = getEventType(payload);
   const normalizedStatus = getStatusFromPayload(payload);
+  logger.incrementWebhook('hotmart');
 
   // Log único e conciso
   console.log(`📨 Webhook Hotmart: ${eventType} | Status: ${normalizedStatus || 'n/d'}`);
@@ -87,9 +90,17 @@ router.post('/', async (req, res) => {
   }
 
   const subscriberData = extractSubscriberData(payload);
+  const sanitizedEmail = sanitizeEmail(subscriberData.email);
+  const sanitizedName = sanitizeText(subscriberData.name || sanitizedEmail, 255);
+  const sanitizedPhone = sanitizeText(subscriberData.phone || '', 30);
   console.log(`👤 Dados: ${subscriberData.email} | ${subscriberData.phone || 'sem tel'} | ${subscriberData.name}`);
+  logger.info('webhook_hotmart_received', {
+    event_type: eventType || 'n/d',
+    status: normalizedStatus || 'n/d',
+    email: sanitizedEmail
+  });
 
-  if (!subscriberData.email) {
+  if (!sanitizedEmail) {
     return res.status(400).json({ success: false, message: 'Email não encontrado no payload' });
   }
 
@@ -104,11 +115,12 @@ router.post('/', async (req, res) => {
     if (action === 'activation') {
       const dataToInsert = {
         name: subscriberData.name || subscriberData.email,
-        email: subscriberData.email,
-        phone: subscriberData.phone,
+        email: sanitizedEmail,
+        phone: sanitizedPhone,
         plan,
         status: 'active'
       };
+      dataToInsert.name = sanitizedName;
 
       const record = await db.upsertSubscriberFromHotmart(dataToInsert);
       if (record?.id) {
@@ -124,6 +136,12 @@ router.post('/', async (req, res) => {
         });
       }
       console.log(`✅ Ativado: ${subscriberData.email} | ID: ${record?.id} | Plano: ${plan}`);
+      logger.info('webhook_hotmart_processed', {
+        action: 'activation',
+        email: sanitizedEmail,
+        plan: sanitizeText(plan, 255),
+        subscriber_id: record?.id || null
+      });
 
       await db.pool.query(
         `INSERT INTO authorization_logs (telegram_id, subscriber_id, action, user_agent, timestamp)
@@ -140,7 +158,7 @@ router.post('/', async (req, res) => {
     }
 
     if (action === 'deactivation') {
-      const record = await db.deactivateSubscriberByEmail(subscriberData.email, { plan });
+      const record = await db.deactivateSubscriberByEmail(sanitizedEmail, { plan: sanitizeText(plan, 255) });
       if (record?.id) {
         cache.invalidate(`sub:${record.id}`);
         const linkedUsers = await db.pool.query(
@@ -173,6 +191,12 @@ router.post('/', async (req, res) => {
           : 'Assinante totalmente desativado';
 
       console.log(`⚠️ Desativado: ${subscriberData.email} | ID: ${record?.id || 'n/d'} | ${logSuffix}`);
+      logger.info('webhook_hotmart_processed', {
+        action: 'deactivation',
+        email: sanitizedEmail,
+        plan: sanitizeText(plan, 255),
+        subscriber_id: record?.id || null
+      });
 
       if (!noChanges) {
         await db.pool.query(
@@ -196,6 +220,12 @@ router.post('/', async (req, res) => {
     }
   } catch (error) {
     console.error('❌ Erro ao processar evento do Hotmart:', error);
+    logger.error('webhook_hotmart_error', {
+      event_type: eventType || 'n/d',
+      status: normalizedStatus || 'n/d',
+      email: sanitizedEmail,
+      error: error.message
+    });
     return res.status(500).json({ success: false, message: 'Erro interno ao processar evento' });
   }
 
