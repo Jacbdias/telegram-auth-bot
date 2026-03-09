@@ -1,6 +1,8 @@
 const TelegramBot = require('node-telegram-bot-api');
 const crypto = require('crypto');
 const db = require('../web/database');
+const cache = require('./cache');
+const logger = require('../shared/logger');
 
 const token = process.env.TELEGRAM_BOT_TOKEN;
 const rawWebAppUrl = process.env.WEB_APP_URL;
@@ -11,10 +13,62 @@ const bot = new TelegramBot(token, { polling: true });
 
 const INVITE_DURATION_HOURS = 72;
 const INVITE_MEMBER_LIMIT = 1;
+const USER_CACHE_TTL_MS = 5 * 60 * 1000;
+const SUBSCRIBER_CACHE_TTL_MS = 5 * 60 * 1000;
+const REQUIRED_CHANNELS_CACHE_TTL_MS = 10 * 60 * 1000;
+const MEMBERSHIP_CACHE_TTL_MS = 2 * 60 * 1000;
+
+async function getCachedUserByTelegramId(telegramId) {
+  const telegramIdStr = telegramId.toString();
+  const key = `user:tg:${telegramIdStr}`;
+  const cached = cache.get(key);
+
+  if (cached) {
+    logger.info('cache_hit_user_telegram', { telegram_id: telegramIdStr });
+    return cached;
+  }
+
+  logger.info('cache_miss_user_telegram', { telegram_id: telegramIdStr });
+
+  const user = await db.getUserByTelegramId(telegramIdStr);
+
+  if (user) {
+    cache.set(key, user, USER_CACHE_TTL_MS);
+
+    if (user.subscriber_id) {
+      cache.set(`sub:${user.subscriber_id}`, user, SUBSCRIBER_CACHE_TTL_MS);
+    }
+  }
+
+  return user;
+}
+
+async function getCachedChannelsForPlan(plan) {
+  const requiredChannelsKey = 'channels:required';
+  let channels = cache.get(requiredChannelsKey);
+
+  if (!channels) {
+    logger.info('cache_miss_channels_required');
+    channels = await db.getAllChannels();
+    cache.set(requiredChannelsKey, channels, REQUIRED_CHANNELS_CACHE_TTL_MS);
+  } else {
+    logger.info('cache_hit_channels_required');
+  }
+
+  const planList = String(plan || '')
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+
+  return channels
+    .filter((channel) => channel.active && (channel.plan === 'all' || planList.includes(channel.plan)))
+    .sort((a, b) => (a.order_index || 0) - (b.order_index || 0));
+}
 
 async function revokeExistingInvites(telegramId) {
   try {
     const telegramIdStr = telegramId.toString();
+    cache.invalidatePattern(`membership:${telegramIdStr}:`);
     const activeInvites = await db.getActiveInviteLinksByTelegramId(telegramIdStr);
 
     if (activeInvites.length === 0) {
@@ -37,8 +91,9 @@ async function revokeExistingInvites(telegramId) {
     if (revokedIds.length > 0) {
       await db.markInviteLinksRevoked(revokedIds);
     }
-  } catch (error) {
-    console.error('Erro ao revogar convites existentes:', error.message);
+    } catch (error) {
+      console.error('Erro ao revogar convites existentes:', error.message);
+      logger.error('telegram_revoke_invites_error', { telegram_id: telegramIdStr, error: error.message });
   }
 }
 
@@ -64,21 +119,43 @@ async function generateInviteLinksForUser(telegramId, channels) {
         inviteOptions.creates_join_request = true;
       }
 
-      try {
-        await bot.unbanChatMember(channel.chat_id, telegramIdStr);
-      } catch (unbanError) {
-        console.warn(`Não foi possível desbanir ${telegramIdStr} em ${channel.name}:`, unbanError.message);
+      const membershipKey = `membership:${telegramIdStr}:${channel.id}`;
+      let isMember = cache.get(membershipKey);
+
+      if (isMember === null) {
+        try {
+          const member = await bot.getChatMember(channel.chat_id, telegramIdStr);
+          isMember = ['member', 'administrator', 'creator'].includes(member.status);
+        } catch (membershipError) {
+          isMember = false;
+        }
+
+        cache.set(membershipKey, isMember, MEMBERSHIP_CACHE_TTL_MS);
+      }
+
+      if (!isMember) {
+        try {
+          await bot.unbanChatMember(channel.chat_id, telegramIdStr);
+        } catch (unbanError) {
+          console.warn(`Não foi possível desbanir ${telegramIdStr} em ${channel.name}:`, unbanError.message);
+        }
       }
 
       const inviteLink = await bot.createChatInviteLink(channel.chat_id, inviteOptions);
 
       await db.saveUserInviteLink(telegramIdStr, channel.id, inviteLink.invite_link, expireAt);
+      cache.invalidate(`membership:${telegramIdStr}:${channel.id}`);
 
       console.log(`✅ Link criado para: ${channel.name}`);
 
       message += `• ${channel.name}\n  ${inviteLink.invite_link}\n\n`;
     } catch (error) {
       console.error(`Erro ao criar link para ${channel.name}:`, error.message);
+      logger.error('telegram_invite_creation_error', {
+        telegram_id: telegramIdStr,
+        chat_id: channel.chat_id,
+        error: error.message
+      });
       message += `• ${channel.name}\n  ⚠️ Erro ao gerar link\n\n`;
     }
 
@@ -97,7 +174,7 @@ bot.onText(/\/start/, async (msg) => {
   const username = msg.from.username || msg.from.first_name;
 
   // Verifica se usuário já está autorizado
-  const user = await db.getUserByTelegramId(chatId);
+  const user = await getCachedUserByTelegramId(chatId);
   
   if (user && user.authorized) {
     return bot.sendMessage(chatId, 
@@ -177,7 +254,7 @@ bot.on('callback_query', async (query) => {
 // Comando /meuscanais
 bot.onText(/\/meuscanais/, async (msg) => {
   const chatId = msg.chat.id;
-  const user = await db.getUserByTelegramId(chatId);
+  const user = await getCachedUserByTelegramId(chatId);
 
   if (!user || !user.authorized) {
     return bot.sendMessage(chatId, 
@@ -186,7 +263,7 @@ bot.onText(/\/meuscanais/, async (msg) => {
     );
   }
 
-  const channels = await db.getUserChannels(user.plan);
+  const channels = await getCachedChannelsForPlan(user.plan);
 
   if (channels.length === 0) {
     return bot.sendMessage(chatId,
@@ -208,9 +285,15 @@ bot.onText(/\/meuscanais/, async (msg) => {
 
 // Função chamada quando verificação é bem-sucedida
 async function notifyUserAuthorized(telegramId, userData) {
-  const channels = await db.getUserChannels(userData.plan);
+  const channels = await getCachedChannelsForPlan(userData.plan);
+  logger.info('user_authorized', {
+    telegram_id: String(telegramId),
+    plan: userData.plan,
+    channels_affected: channels.length
+  });
 
   await revokeExistingInvites(telegramId);
+  const generatedLinksMessage = await generateInviteLinksForUser(telegramId, channels);
 
   // Escapa caracteres especiais do Markdown
   const escapedName = userData.name.replace(/[_*[\]()~`>#+\-=|{}.!]/g, '\\$&');
@@ -222,7 +305,7 @@ async function notifyUserAuthorized(telegramId, userData) {
     `📋 *Seu Plano:* ${escapedPlan}\n\n` +
     `🔗 *Clique nos links abaixo para entrar nos grupos:*\n\n`;
 
-  message += await generateInviteLinksForUser(telegramId, channels);
+  message += generatedLinksMessage;
 
   message +=
     `\n⚠️ *IMPORTANTE:*\n` +
@@ -235,6 +318,10 @@ async function notifyUserAuthorized(telegramId, userData) {
     await bot.sendMessage(telegramId, message, { parse_mode: 'Markdown' });
   } catch (error) {
     console.error('Erro ao enviar mensagem de verificação:', error.message);
+    logger.error('telegram_send_message_error', {
+      telegram_id: String(telegramId),
+      error: error.message
+    });
     
     // Fallback: tenta enviar sem formatação
     const plainMessage = 
@@ -242,7 +329,7 @@ async function notifyUserAuthorized(telegramId, userData) {
       `Bem-vindo(a), ${userData.name}!\n\n` +
       `📋 Seu Plano: ${userData.plan}\n\n` +
       `🔗 Clique nos links abaixo para entrar nos grupos:\n\n` +
-      (await generateInviteLinksForUser(telegramId, channels)) +
+      generatedLinksMessage +
       `\n⚠️ IMPORTANTE:\n` +
       `• Estes links são de uso único\n` +
       `• Expiram em ${INVITE_DURATION_HOURS} horas\n` +
@@ -287,6 +374,10 @@ function cleanExpiredTokens() {
 // Limpa tokens expirados a cada 5 minutos
 setInterval(cleanExpiredTokens, 5 * 60 * 1000);
 
+setInterval(() => {
+  logger.info('cache_stats', cache.getStats());
+}, 5 * 60 * 1000);
+
 // Comando /revogar (apenas para admins)
 bot.onText(/\/revogar (.+)/, async (msg, match) => {
   const chatId = msg.chat.id;
@@ -313,10 +404,12 @@ const adminIds = ['1839742847']; // Seu Telegram ID
     const authorizedUser = await db.getUserBySubscriberId(subscriber.id);
     
     if (authorizedUser && authorizedUser.telegram_id) {
+      cache.invalidate(`user:tg:${authorizedUser.telegram_id}`);
+      cache.invalidatePattern(`membership:${authorizedUser.telegram_id}:`);
       await revokeExistingInvites(authorizedUser.telegram_id);
 
       // Tenta remover de todos os canais
-      const channels = await db.getUserChannels(subscriber.plan);
+      const channels = await getCachedChannelsForPlan(subscriber.plan);
       let removedCount = 0;
       let failedChannels = [];
 
@@ -354,6 +447,12 @@ const adminIds = ['1839742847']; // Seu Telegram ID
 
     // Remove do banco de dados
     await db.revokeUserAccess(subscriber.id);
+    logger.info('user_revoked', {
+      subscriber_id: subscriber.id,
+      telegram_id: authorizedUser?.telegram_id || null,
+      plan: subscriber.plan,
+      channels_affected: removedCount || 0
+    });
 
     // Confirma ao admin
     let confirmMessage = 
@@ -438,6 +537,8 @@ bot.onText(/\/sync/, async (msg) => {
     let removedCount = 0;
 
     for (const user of inactiveUsers) {
+      cache.invalidate(`user:tg:${user.telegram_id}`);
+      cache.invalidatePattern(`membership:${user.telegram_id}:`);
       await revokeExistingInvites(user.telegram_id);
 
       for (const channel of allChannels) {
@@ -469,6 +570,7 @@ bot.onText(/\/sync/, async (msg) => {
       `✅ Sincronização concluída!\n\n` +
       `👥 Usuários removidos: ${removedCount}`
     );
+    logger.info('sync_revoked_inactive_users', { removed_count: removedCount });
 
   } catch (error) {
     bot.sendMessage(chatId, `❌ Erro: ${error.message}`);

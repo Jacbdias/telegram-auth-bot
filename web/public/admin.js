@@ -144,11 +144,24 @@ function showDashboard() {
     document.getElementById('loggedUser').textContent = username;
     document.getElementById('loginContainer').style.display = 'none';
     document.getElementById('dashboard').classList.add('active');
-    loadStats();
-    loadSubscribers();
-    loadChannels();
-    loadLogs();
+    loadBootstrap();
     loadAdminUsers();
+}
+
+async function loadBootstrap() {
+    try {
+        const payload = await apiRequest('/bootstrap');
+        loadStats(payload.stats, payload.channels);
+        loadSubscribers(payload.subscribers);
+        loadChannels(payload.channels);
+        loadLogs(payload.recentLogs);
+    } catch (error) {
+        console.error('Erro ao carregar bootstrap do dashboard:', error);
+        loadStats();
+        loadSubscribers();
+        loadChannels();
+        loadLogs();
+    }
 }
 
 // ============== REQUISIÇÕES ==============
@@ -253,15 +266,15 @@ function showTab(tabName, trigger = null) {
 
 // ============== STATS ==============
 
-async function loadStats() {
+async function loadStats(prefetchedStats = null, prefetchedChannels = null) {
     try {
-        const stats = await apiRequest('/stats');
+        const stats = prefetchedStats || await apiRequest('/stats');
         
         document.getElementById('totalSubscribers').textContent = stats.totalActiveSubscribers || 0;
         document.getElementById('totalAuthorized').textContent = stats.totalAuthorizedUsers || 0;
         
         // Conta total de canais
-        const channels = await apiRequest('/channels');
+        const channels = prefetchedChannels || await apiRequest('/channels');
         document.getElementById('totalChannels').textContent = channels.length || 0;
     } catch (error) {
         console.error('Erro ao carregar estatísticas:', error);
@@ -270,9 +283,9 @@ async function loadStats() {
 
 // ============== ASSINANTES ==============
 
-async function loadSubscribers() {
+async function loadSubscribers(prefetchedSubscribers = null) {
     try {
-        subscribersData = await apiRequest('/subscribers');
+        subscribersData = prefetchedSubscribers || await apiRequest('/subscribers');
         populateSubscriberPlanFilter(subscribersData);
         const searchValue = subscriberSearchInput ? subscriberSearchInput.value : '';
         renderSubscribersTable(searchValue);
@@ -567,9 +580,9 @@ async function deleteSubscriber(id, name) {
 
 // ============== CANAIS ==============
 
-async function loadChannels() {
+async function loadChannels(prefetchedChannels = null) {
     try {
-        const channels = await apiRequest('/channels');
+        const channels = prefetchedChannels || await apiRequest('/channels');
         channelsCache = channels;
 
         const subscriberModal = document.getElementById('subscriberModal');
@@ -975,9 +988,9 @@ async function deleteChannel(id, name) {
 
 // ============== LOGS ==============
 
-async function loadLogs() {
+async function loadLogs(prefetchedLogs = null) {
     try {
-        const logs = await apiRequest('/logs');
+        const logs = prefetchedLogs || await apiRequest('/logs');
 
         let html = `
             <table>

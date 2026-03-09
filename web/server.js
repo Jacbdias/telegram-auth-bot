@@ -2,11 +2,38 @@ const express = require('express');
 const bodyParser = require('body-parser');
 const path = require('path');
 const db = require('./database');
-const { validateToken, consumeToken, notifyUserAuthorized } = require('../bot/index');
+const { bot, validateToken, consumeToken, notifyUserAuthorized } = require('../bot/index');
 const hotmartWebhook = require('./hotmart-webhook');
+const cache = require('../bot/cache');
+const logger = require('../shared/logger');
+const RateLimiter = require('../shared/rate-limiter');
+const { sanitizeEmail } = require('../shared/sanitize');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+app.disable('x-powered-by');
+
+logger.startDailyReset();
+
+const healthRateLimiter = new RateLimiter(60 * 1000, 30);
+const webhookRateLimiter = new RateLimiter(60 * 1000, 60);
+const adminApiRateLimiter = new RateLimiter(60 * 1000, 120);
+const adminLoginRateLimiter = new RateLimiter(60 * 1000, 10);
+
+const getRequestIp = (req) =>
+  req.ip || req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown';
+
+const makeRateLimitMiddleware = (limiter, scope) => (req, res, next) => {
+  const ip = getRequestIp(req);
+  const result = limiter.isAllowed(ip);
+
+  if (!result.allowed) {
+    logger.warn('rate_limit_exceeded', { scope, ip, retry_after_seconds: result.retryAfterSeconds });
+    return res.status(429).json({ error: 'Too many requests', retry_after_seconds: result.retryAfterSeconds });
+  }
+
+  return next();
+};
 
 // CORS - Permite requisições da Vercel
 const cors = require('cors');
@@ -15,7 +42,62 @@ app.use(cors({
   credentials: true
 }));
 
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('X-XSS-Protection', '1; mode=block');
+  res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.removeHeader('X-Powered-By');
+  next();
+});
+
+app.use((req, res, next) => {
+  const start = Date.now();
+  res.on('finish', () => {
+    if (req.path === '/health') {
+      return;
+    }
+
+    logger.info('http_request', {
+      method: req.method,
+      path: req.path,
+      status: res.statusCode,
+      duration_ms: Date.now() - start
+    });
+  });
+  next();
+});
+
+app.get('/health', makeRateLimitMiddleware(healthRateLimiter, 'health_check'), async (req, res) => {
+  const response = {
+    status: 'healthy',
+    uptime_seconds: Math.floor(process.uptime()),
+    database: {
+      connected: false,
+      response_ms: null,
+      pool: db.getPoolStats()
+    },
+    telegram_bot: {
+      polling: Boolean(bot && typeof bot.isPolling === 'function' ? bot.isPolling() : false)
+    },
+    cache: cache.getStats(),
+    version: process.env.APP_VERSION || '1.0.0'
+  };
+
+  try {
+    response.database.response_ms = await db.healthCheckQuery();
+    response.database.connected = true;
+    return res.json(response);
+  } catch (error) {
+    response.status = 'unhealthy';
+    response.database.error = error.message;
+    return res.status(503).json(response);
+  }
+});
+
 // Webhook Hotmart (usa body raw, precisa vir antes do bodyParser padrão)
+app.use('/api/hotmart/webhook', makeRateLimitMiddleware(webhookRateLimiter, 'webhook_hotmart'));
 app.use('/api/hotmart/webhook', hotmartWebhook);
 
 // Middleware
@@ -46,7 +128,7 @@ app.get('/verify', (req, res) => {
 // Rota de verificação de dados
 app.post('/api/verify', async (req, res) => {
   const { token, email, phone } = req.body;
-  const sanitizedEmail = typeof email === 'string' ? email.trim() : '';
+  const sanitizedEmail = sanitizeEmail(email);
   const sanitizedPhone = typeof phone === 'string' ? phone : '';
 
   // Validação básica
@@ -154,12 +236,38 @@ setInterval(() => {
 }, 60 * 60 * 1000);
 
 // Rotas administrativas
-const adminRoutes = require('./admin-routes');
-app.use('/api/admin', adminRoutes);
+const { createAdminRouter } = require('./admin-routes');
+app.use('/api/admin', makeRateLimitMiddleware(adminApiRateLimiter, 'admin_api'));
+app.use('/api/admin', createAdminRouter({
+  loginRateLimiter: adminLoginRateLimiter,
+  getBotPollingStatus: () => Boolean(bot && typeof bot.isPolling === 'function' ? bot.isPolling() : false)
+}));
 
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   console.log(`🚀 Servidor rodando na porta ${PORT}`);
   console.log(`🌐 Acesse: http://localhost:${PORT}`);
 });
+
+async function gracefulShutdown(signal) {
+  logger.info('shutdown_initiated', { signal });
+
+  server.close(async () => {
+    try {
+      if (bot && typeof bot.stopPolling === 'function') {
+        await bot.stopPolling();
+      }
+
+      await db.pool.end();
+      logger.info('shutdown_complete', { signal });
+      process.exit(0);
+    } catch (error) {
+      logger.error('shutdown_error', { signal, error: error.message });
+      process.exit(1);
+    }
+  });
+}
+
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
 module.exports = app;
