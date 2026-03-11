@@ -1132,8 +1132,16 @@ async function getAllAuthorizedUsers({ limit = 500 } = {}) {
 // ============== FUNÇÕES ADMIN ==============
 
 // Listar todos os assinantes
-async function getAllSubscribers({ limit = 500, offset = 0 } = {}) {
+async function getAllSubscribers({ limit = 500, offset = 0, search = '' } = {}) {
   try {
+    const params = [limit, offset];
+    let whereClause = '';
+
+    if (search && search.trim()) {
+      whereClause = `WHERE s.name ILIKE $3 OR s.email ILIKE $3 OR s.phone ILIKE $3`;
+      params.push(`%${search.trim()}%`);
+    }
+
     const result = await timedQuery(
       'get_all_subscribers',
       `SELECT s.*, 
@@ -1142,9 +1150,10 @@ async function getAllSubscribers({ limit = 500, offset = 0 } = {}) {
               au.authorized_at
        FROM subscribers s
        LEFT JOIN authorized_users au ON s.id = au.subscriber_id
+       ${whereClause}
        ORDER BY s.created_at DESC
        LIMIT $1 OFFSET $2`,
-      [limit, offset]
+      params
     );
     return result.rows;
   } catch (error) {
