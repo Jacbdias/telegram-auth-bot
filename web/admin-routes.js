@@ -297,12 +297,13 @@ function createAdminRouter({
   // ============== ASSINANTES ==============
 
   // Listar todos os assinantes
-  router.get('/subscribers', adminAuth, async (req, res) => {
+router.get('/subscribers', adminAuth, async (req, res) => {
     try {
       const limit = Math.min(parsePositiveInt(req.query.limit, 200), 500);
       const page = parsePositiveInt(req.query.page, 1);
       const offset = (page - 1) * limit;
-      const subscribers = await db.getAllSubscribers({ limit, offset });
+      const search = req.query.search || '';
+      const subscribers = await db.getAllSubscribers({ limit, offset, search });
       res.json(subscribers);
     } catch (error) {
       res.status(500).json({ error: error.message });
