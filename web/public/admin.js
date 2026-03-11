@@ -113,9 +113,28 @@ function handleSubscriberFiltersChange() {
     renderSubscribersTable(searchValue);
 }
 
+let searchDebounceTimer = null;
+
 if (subscriberSearchInput) {
     subscriberSearchInput.addEventListener('input', (event) => {
-        renderSubscribersTable(event.target.value);
+        const value = event.target.value.trim();
+        
+        clearTimeout(searchDebounceTimer);
+        searchDebounceTimer = setTimeout(async () => {
+            if (value.length >= 2) {
+                try {
+                    const results = await apiRequest(`/subscribers?limit=500&search=${encodeURIComponent(value)}`);
+                    subscribersData = results;
+                    renderSubscribersTable(value);
+                } catch (error) {
+                    console.error('Erro na busca:', error);
+                }
+            } else if (value.length === 0) {
+                loadSubscribers();
+            } else {
+                renderSubscribersTable(value);
+            }
+        }, 300);
     });
 }
 
@@ -285,7 +304,7 @@ async function loadStats(prefetchedStats = null, prefetchedChannels = null) {
 
 async function loadSubscribers(prefetchedSubscribers = null) {
     try {
-        subscribersData = prefetchedSubscribers || await apiRequest('/subscribers');
+        subscribersData = prefetchedSubscribers || await apiRequest('/subscribers?limit=500');
         populateSubscriberPlanFilter(subscribersData);
         const searchValue = subscriberSearchInput ? subscriberSearchInput.value : '';
         renderSubscribersTable(searchValue);
