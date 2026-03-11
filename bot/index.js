@@ -347,51 +347,28 @@ async function notifyUserAuthorized(telegramId, userData) {
   await revokeExistingInvites(telegramId);
   const generatedLinksMessage = await generateInviteLinksForUser(telegramId, channels);
 
-  // Escapa caracteres especiais do Markdown
-  const escapedName = userData.name.replace(/[_*[\]()~`>#+\-=|{}.!]/g, '\\$&');
-  const escapedPlan = userData.plan.replace(/[_*[\]()~`>#+\-=|{}.!]/g, '\\$&');
-
-  let message =
-    `✅ *Verificação Concluída com Sucesso\\!*\n\n` +
-    `Bem\\-vindo\\(a\\), ${escapedName}\\!\n\n` +
-    `📋 *Seu Plano:* ${escapedPlan}\n\n` +
-    `🔗 *Clique nos links abaixo para entrar nos grupos:*\n\n`;
-
-  message += generatedLinksMessage;
-
-  message +=
-    `\n⚠️ *IMPORTANTE:*\n` +
+  const message =
+    `✅ Verificação Concluída com Sucesso!\n\n` +
+    `Bem-vindo(a), ${userData.name}!\n\n` +
+    `📋 Seu Plano: ${userData.plan}\n\n` +
+    `🔗 Clique nos links abaixo para entrar nos grupos:\n\n` +
+    generatedLinksMessage +
+    `\n⚠️ IMPORTANTE:\n` +
     `• Estes links são de uso único\n` +
     `• Expiram em ${INVITE_DURATION_HOURS} horas\n` +
     `• Não compartilhe com outras pessoas\n\n` +
-    `💡 Use /meuscanais para solicitar novos links se necessário\\.`;
+    `💡 Use /meuscanais para solicitar novos links se necessário.`;
 
   try {
-    await safeSendMessage(telegramId, message, { parse_mode: 'Markdown' }, 3, 'authorization_success');
+    await safeSendMessage(telegramId, message, {}, 3, 'authorization_success');
   } catch (error) {
     console.error('Erro ao enviar mensagem de verificação:', error.message);
     logger.error('telegram_send_message_error', {
       telegram_id: String(telegramId),
       error: error.message
     });
-    
-    // Fallback: tenta enviar sem formatação
-    const plainMessage = 
-      `✅ Verificação Concluída com Sucesso!\n\n` +
-      `Bem-vindo(a), ${userData.name}!\n\n` +
-      `📋 Seu Plano: ${userData.plan}\n\n` +
-      `🔗 Clique nos links abaixo para entrar nos grupos:\n\n` +
-      generatedLinksMessage +
-      `\n⚠️ IMPORTANTE:\n` +
-      `• Estes links são de uso único\n` +
-      `• Expiram em ${INVITE_DURATION_HOURS} horas\n` +
-      `• Não compartilhe com outras pessoas\n\n` +
-      `💡 Use /meuscanais para solicitar novos links se necessário.`;
-    
-    await safeSendMessage(telegramId, plainMessage, {}, 3, 'authorization_success_fallback');
   }
 }
-
 // Função para validar token
 function validateToken(token) {
   const data = verificationTokens.get(token);
