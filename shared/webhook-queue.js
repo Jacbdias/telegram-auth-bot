@@ -3,6 +3,7 @@ class WebhookRetryQueue {
     this.queue = [];
     this.maxSize = maxSize;
     this.maxRetries = maxRetries;
+    this.maxAgeMs = 15 * 60 * 1000;
     this.deadLetter = [];
     this.maxDeadLetter = 50;
   }
@@ -37,13 +38,18 @@ class WebhookRetryQueue {
   }
 
   getStatus() {
+    const now = Date.now();
+    const oldestQueued = this.queue[0];
+
     return {
       queued: this.queue.length,
       deadLetter: this.deadLetter.length,
+      maxRetries: this.maxRetries,
+      oldestQueuedAgeMs: oldestQueued ? now - oldestQueued.timestamp : 0,
       items: this.queue.map((w) => ({
         type: w.type,
         attempt: w.attempt,
-        age_ms: Date.now() - w.timestamp
+        age_ms: now - w.timestamp
       }))
     };
   }
@@ -63,6 +69,30 @@ class WebhookRetryQueue {
     const count = this.deadLetter.length;
     this.deadLetter = [];
     return count;
+  }
+
+  clearQueue() {
+    const count = this.queue.length;
+    this.queue = [];
+    return count;
+  }
+
+  moveStaleToDeadLetter(maxAgeMs = this.maxAgeMs) {
+    const now = Date.now();
+    const keep = [];
+    let moved = 0;
+
+    for (const item of this.queue) {
+      if (now - item.timestamp > maxAgeMs) {
+        this.moveToDeadLetter({ ...item, reason: 'stale_item' }, new Error('stale_item'));
+        moved += 1;
+      } else {
+        keep.push(item);
+      }
+    }
+
+    this.queue = keep;
+    return moved;
   }
 }
 
