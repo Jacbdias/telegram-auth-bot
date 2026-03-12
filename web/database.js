@@ -174,6 +174,22 @@ async function ensureSchema() {
        ON subscribers (LOWER(TRIM(email)))`
     );
 
+    await pool.query(
+      `CREATE INDEX IF NOT EXISTS idx_authorized_users_subscriber_id
+       ON authorized_users(subscriber_id)`
+    );
+
+    await pool.query(
+      `CREATE INDEX IF NOT EXISTS idx_user_invite_links_telegram_revoked
+       ON user_invite_links(telegram_id, revoked_at)
+       WHERE revoked_at IS NULL`
+    );
+
+    await pool.query(
+      `CREATE INDEX IF NOT EXISTS idx_authorization_logs_timestamp_desc
+       ON authorization_logs(timestamp DESC)`
+    );
+
     const requiredChannels = [
       {
         name: 'Mentoria Renda Turbinada',

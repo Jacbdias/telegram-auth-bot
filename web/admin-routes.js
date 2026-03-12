@@ -6,6 +6,11 @@ const logger = require('../shared/logger');
 const metricsCollector = require('../shared/metrics-collector');
 const webhookQueue = require('../shared/webhook-queue');
 
+const dashboardCache = {
+  data: null,
+  timestamp: 0
+};
+
 function createAdminRouter({
   db = defaultDb,
   passwords = passwordUtils,
@@ -126,28 +131,50 @@ function createAdminRouter({
     return parsed;
   };
 
+  const getDashboardPayload = async (query = {}) => {
+    const limit = Math.min(parsePositiveInt(query.limit, 200), 500);
+    const page = parsePositiveInt(query.page, 1);
+    const offset = (page - 1) * limit;
+
+    const [stats, subscribers, channels, recentLogs] = await Promise.all([
+      db.getStats(),
+      db.getAllSubscribers({ limit, offset }),
+      db.getAllChannels({ limit: 500 }),
+      db.getAuthorizationLogs()
+    ]);
+
+    return {
+      stats,
+      subscribers,
+      channels,
+      recentLogs,
+      pagination: { page, limit }
+    };
+  };
+
+  router.get('/dashboard', adminAuth, async (req, res) => {
+    try {
+      const refresh = parseBoolean(req.query.refresh);
+
+      if (!refresh && dashboardCache.data && Date.now() - dashboardCache.timestamp < 30000) {
+        return res.json(dashboardCache.data);
+      }
+
+      const payload = await getDashboardPayload(req.query);
+      dashboardCache.data = payload;
+      dashboardCache.timestamp = Date.now();
+      return res.json(payload);
+    } catch (error) {
+      return res.status(500).json({ error: error.message });
+    }
+  });
+
   router.get('/bootstrap', adminAuth, async (req, res) => {
     try {
-      const limit = Math.min(parsePositiveInt(req.query.limit, 200), 500);
-      const page = parsePositiveInt(req.query.page, 1);
-      const offset = (page - 1) * limit;
-
-      const [stats, subscribers, channels, recentLogs] = await Promise.all([
-        db.getStats(),
-        db.getAllSubscribers({ limit, offset }),
-        db.getAllChannels({ limit: 500 }),
-        db.getAuthorizationLogs()
-      ]);
-
-      res.json({
-        stats,
-        subscribers,
-        channels,
-        recentLogs,
-        pagination: { page, limit }
-      });
+      const payload = await getDashboardPayload(req.query);
+      return res.json(payload);
     } catch (error) {
-      res.status(500).json({ error: error.message });
+      return res.status(500).json({ error: error.message });
     }
   });
 
