@@ -192,6 +192,19 @@ function createAdminRouter({
     res.json({ success: true, cleared });
   });
 
+  router.delete('/webhook-queue/queued', adminAuth, (req, res) => {
+    const cleared = webhookQueue.clearQueue();
+    res.json({ success: true, cleared });
+  });
+
+  router.post('/webhook-queue/prune-stale', adminAuth, (req, res) => {
+    const requestedMaxAge = Number(req.body?.maxAgeMs || req.query?.maxAgeMs || 0);
+    const moved = webhookQueue.moveStaleToDeadLetter(
+      Number.isFinite(requestedMaxAge) && requestedMaxAge > 0 ? requestedMaxAge : undefined
+    );
+    res.json({ success: true, moved, status: webhookQueue.getStatus() });
+  });
+
   // ============== ADMIN USERS ==============
 
   const sanitizeAdmin = (admin) => ({
