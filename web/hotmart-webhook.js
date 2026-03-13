@@ -187,6 +187,9 @@ router.post('/', async (req, res) => {
 });
 
 const retryInterval = setInterval(async () => {
+  const queue = webhookQueue.getStatus();
+  if (queue.queued === 0) return;
+
   const moved = webhookQueue.moveStaleToDeadLetter(WEBHOOK_STALE_MAX_AGE_MS);
   if (moved > 0) {
     logger.warn('webhook_retry_stale_moved', {

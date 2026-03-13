@@ -240,20 +240,6 @@ const verificationCleanupInterval = setInterval(() => {
   verificationAttempts.clear();
 }, 60 * 60 * 1000);
 
-const healthWatchInterval = setInterval(async () => {
-  const start = Date.now();
-  try {
-    const ms = await db.healthCheckQuery();
-    if (ms > 5000) {
-      alerts.send('HEALTH_DEGRADED', `Health check: banco respondeu em ${ms}ms`, 5 * 60 * 1000);
-    }
-  } catch (_error) {
-    alerts.send('HEALTH_DEGRADED', 'Health check: banco não respondeu', 5 * 60 * 1000);
-  } finally {
-    metrics.recordLatency('db', Date.now() - start);
-  }
-}, 60 * 1000);
-
 // Rotas administrativas
 const { createAdminRouter } = require('./admin-routes');
 app.use('/api/admin', makeRateLimitMiddleware(adminApiRateLimiter, 'admin_api'));
@@ -281,7 +267,6 @@ async function gracefulShutdown(signal) {
       adminApiRateLimiter.stop();
       adminLoginRateLimiter.stop();
       clearInterval(verificationCleanupInterval);
-      clearInterval(healthWatchInterval);
       stopBotIntervals();
       if (typeof hotmartWebhook.stopWebhookRetryInterval === 'function') {
         hotmartWebhook.stopWebhookRetryInterval();
