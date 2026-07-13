@@ -628,8 +628,14 @@ async function markInviteLinksRevokedByTelegramId(telegramId) {
 
 
 async function revokeTelegramAccess(telegramId, { plan, revokedPlans } = {}) {
+  const summary = {
+    telegram_id: telegramId || null,
+    channels_processed: 0,
+    failures: []
+  };
+
   if (!telegramId) {
-    return;
+    return summary;
   }
 
   await schemaReady;
@@ -663,6 +669,7 @@ async function revokeTelegramAccess(telegramId, { plan, revokedPlans } = {}) {
       bot = new TelegramBot(token, { polling: false });
     } catch (error) {
       console.error('⚠️ Erro ao inicializar bot para revogar acesso:', error);
+      summary.failures.push({ scope: 'telegram_bot_init', error: error.message });
     }
   }
 
@@ -690,6 +697,11 @@ async function revokeTelegramAccess(telegramId, { plan, revokedPlans } = {}) {
           inviteIds.push(invite.id);
         } catch (error) {
           console.error(`⚠️ Erro ao revogar convite ${invite.invite_link}:`, error.message);
+          summary.failures.push({
+            scope: 'invite_link',
+            channel_id: invite.chat_id,
+            error: error.message
+          });
         }
 
         await delay(300);
@@ -700,6 +712,7 @@ async function revokeTelegramAccess(telegramId, { plan, revokedPlans } = {}) {
       }
     } catch (error) {
       console.error('Erro ao processar revogação de convites:', error);
+      summary.failures.push({ scope: 'invite_links', error: error.message });
     }
   }
 
@@ -730,19 +743,30 @@ async function revokeTelegramAccess(telegramId, { plan, revokedPlans } = {}) {
           continue;
         }
 
+        summary.channels_processed++;
+
         try {
           await bot.banChatMember(channel.chat_id, telegramId);
           await bot.unbanChatMember(channel.chat_id, telegramId);
         } catch (error) {
           console.error(`⚠️ Erro ao remover usuário do canal ${channel.name}:`, error.message);
+          summary.failures.push({
+            scope: 'channel',
+            channel: channel.name,
+            channel_id: channel.chat_id,
+            error: error.message
+          });
         }
 
         await delay(500);
       }
     } catch (error) {
       console.error('Erro ao remover usuário dos canais:', error);
+      summary.failures.push({ scope: 'channels', error: error.message });
     }
   }
+
+  return summary;
 }
 
 
@@ -912,7 +936,7 @@ async function getSubscriberByEmail(email) {
       'get_subscriber_by_email',
       `SELECT id, name, email, phone, plan, status, origin
        FROM subscribers
-       WHERE email = $1`,
+       WHERE LOWER(TRIM(email)) = $1`,
       [normalizeEmail(email)]
     );
 
@@ -1093,8 +1117,14 @@ async function revokeUserAccess(subscriberId) {
     const plan = authorizedUser.rows[0]?.plan;
 
     // Remove dos grupos do Telegram (se tiver telegram_id)
+    let revocationSummary = {
+      telegram_id: telegramId || null,
+      channels_processed: 0,
+      failures: []
+    };
+
     if (telegramId) {
-      await revokeTelegramAccess(telegramId, { plan });
+      revocationSummary = await revokeTelegramAccess(telegramId, { plan });
     }
 
     // Registra log ANTES de deletar
@@ -1117,7 +1147,13 @@ async function revokeUserAccess(subscriberId) {
     );
 
     await client.query('COMMIT');
-    return true;
+    return {
+      success: true,
+      telegram_id: telegramId || null,
+      telegram_id_found: Boolean(telegramId),
+      channels_processed: revocationSummary.channels_processed || 0,
+      failures: revocationSummary.failures || []
+    };
   } catch (error) {
     await client.query('ROLLBACK');
     console.error('Erro ao revogar acesso:', error);

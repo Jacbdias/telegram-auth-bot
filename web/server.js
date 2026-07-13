@@ -21,6 +21,7 @@ const healthRateLimiter = new RateLimiter(60 * 1000, 30);
 const webhookRateLimiter = new RateLimiter(60 * 1000, 60);
 const adminApiRateLimiter = new RateLimiter(60 * 1000, 120);
 const adminLoginRateLimiter = new RateLimiter(60 * 1000, 10);
+const internalApiRateLimiter = new RateLimiter(60 * 1000, 120);
 
 const getRequestIp = (req) =>
   req.ip || req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown';
@@ -240,6 +241,11 @@ const verificationCleanupInterval = setInterval(() => {
   verificationAttempts.clear();
 }, 60 * 60 * 1000);
 
+// Rotas internas protegidas
+const { createInternalRouter } = require('./internal-routes');
+app.use('/api/internal', makeRateLimitMiddleware(internalApiRateLimiter, 'internal_api'));
+app.use('/api/internal', createInternalRouter());
+
 // Rotas administrativas
 const { createAdminRouter } = require('./admin-routes');
 app.use('/api/admin', makeRateLimitMiddleware(adminApiRateLimiter, 'admin_api'));
@@ -266,6 +272,7 @@ async function gracefulShutdown(signal) {
       webhookRateLimiter.stop();
       adminApiRateLimiter.stop();
       adminLoginRateLimiter.stop();
+      internalApiRateLimiter.stop();
       clearInterval(verificationCleanupInterval);
       stopBotIntervals();
       if (typeof hotmartWebhook.stopWebhookRetryInterval === 'function') {
