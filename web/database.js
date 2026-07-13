@@ -786,7 +786,7 @@ async function revokeAuthorization(telegramId) {
     const subscriberId = userData.rows[0]?.subscriber_id || null;
     const plan = userData.rows[0]?.plan;
 
-    await revokeTelegramAccess(telegramId, { plan });
+    const revocationSummary = await revokeTelegramAccess(telegramId, { plan });
 
     await pool.query(
       'UPDATE authorized_users SET authorized = false WHERE telegram_id = $1',
@@ -802,7 +802,13 @@ async function revokeAuthorization(telegramId) {
 
     logger.incrementAuthAction('revoked');
 
-    return true;
+    return {
+      success: true,
+      telegram_id: telegramId,
+      telegram_id_found: Boolean(telegramId),
+      channels_processed: revocationSummary.channels_processed || 0,
+      failures: revocationSummary.failures || []
+    };
   } catch (error) {
     console.error('Erro ao revogar autorização:', error);
     throw error;
@@ -1083,18 +1089,23 @@ async function deactivateSubscriberByEmail(email, { plan } = {}) {
 }
 
 // Busca usuário autorizado por subscriber_id
-async function getUserBySubscriberId(subscriberId) {
+async function getAuthorizedUsersBySubscriberId(subscriberId) {
   try {
     const result = await pool.query(
       `SELECT * FROM authorized_users WHERE subscriber_id = $1`,
       [subscriberId]
     );
 
-    return result.rows.length > 0 ? result.rows[0] : null;
+    return result.rows;
   } catch (error) {
-    console.error('Erro ao buscar usuário por subscriber_id:', error);
+    console.error('Erro ao buscar usuários por subscriber_id:', error);
     throw error;
   }
+}
+
+async function getUserBySubscriberId(subscriberId) {
+  const users = await getAuthorizedUsersBySubscriberId(subscriberId);
+  return users.length > 0 ? users[0] : null;
 }
 
 // Remove acesso do usuário completamente (DELETA da tabela)
@@ -1117,14 +1128,8 @@ async function revokeUserAccess(subscriberId) {
     const plan = authorizedUser.rows[0]?.plan;
 
     // Remove dos grupos do Telegram (se tiver telegram_id)
-    let revocationSummary = {
-      telegram_id: telegramId || null,
-      channels_processed: 0,
-      failures: []
-    };
-
     if (telegramId) {
-      revocationSummary = await revokeTelegramAccess(telegramId, { plan });
+      await revokeTelegramAccess(telegramId, { plan });
     }
 
     // Registra log ANTES de deletar
@@ -1147,13 +1152,7 @@ async function revokeUserAccess(subscriberId) {
     );
 
     await client.query('COMMIT');
-    return {
-      success: true,
-      telegram_id: telegramId || null,
-      telegram_id_found: Boolean(telegramId),
-      channels_processed: revocationSummary.channels_processed || 0,
-      failures: revocationSummary.failures || []
-    };
+    return true;
   } catch (error) {
     await client.query('ROLLBACK');
     console.error('Erro ao revogar acesso:', error);
@@ -1488,6 +1487,7 @@ module.exports = {
   getSubscribersByEmails,
   getUserByTelegramId,
   getUserBySubscriberId,
+  getAuthorizedUsersBySubscriberId,
   authorizeUser,
   getUserChannels,
   saveUserInviteLink,

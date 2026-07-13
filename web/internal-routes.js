@@ -70,26 +70,60 @@ function createInternalRouter() {
         return res.json({ status: 'not_found', email });
       }
 
-      const authorizedUser = await db.getUserBySubscriberId(subscriber.id);
-      const revocation = await db.revokeUserAccess(subscriber.id);
-      const failures = revocation.failures || [];
-      const telegramIdFound = Boolean(authorizedUser?.telegram_id || revocation.telegram_id_found);
-      const status = telegramIdFound ? 'revoked' : 'no_telegram_link';
+      const authorizedUsers = await db.getAuthorizedUsersBySubscriberId(subscriber.id);
+      const linkedUsers = authorizedUsers.filter((user) => user.telegram_id);
+      const activeLinkedUsers = linkedUsers.filter((user) => user.authorized !== false);
+
+      if (linkedUsers.length === 0) {
+        logger.info('internal_revoke_no_telegram_link', { email: maskedEmail, reason });
+        return res.json({
+          status: 'no_telegram_link',
+          email,
+          telegram_id_encontrado: false,
+          canais_processados: 0,
+          falhas: []
+        });
+      }
+
+      if (activeLinkedUsers.length === 0) {
+        logger.info('internal_revoke_already_revoked', {
+          email: maskedEmail,
+          reason,
+          telegram_ids: linkedUsers.length
+        });
+
+        return res.json({
+          status: 'already_revoked',
+          email,
+          telegram_id_encontrado: true,
+          canais_processados: 0,
+          falhas: []
+        });
+      }
+
+      const revocations = await Promise.all(activeLinkedUsers.map((user) => db.revokeAuthorization(user.telegram_id)));
+      const failures = revocations.flatMap((revocation) => revocation.failures || []);
+      const channelsProcessed = revocations.reduce(
+        (total, revocation) => total + (revocation.channels_processed || 0),
+        0
+      );
 
       logger.info('internal_revoke_completed', {
         email: maskedEmail,
         reason,
-        status,
-        telegram_id_found: telegramIdFound,
-        channels_processed: revocation.channels_processed || 0,
+        status: 'revoked',
+        telegram_id_found: true,
+        telegram_ids: linkedUsers.length,
+        revoked_telegram_ids: activeLinkedUsers.length,
+        channels_processed: channelsProcessed,
         failures: failures.length
       });
 
       return res.json({
-        status,
+        status: 'revoked',
         email,
-        telegram_id_encontrado: telegramIdFound,
-        canais_processados: revocation.channels_processed || 0,
+        telegram_id_encontrado: true,
+        canais_processados: channelsProcessed,
         falhas: failures
       });
     } catch (error) {
