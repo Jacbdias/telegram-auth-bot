@@ -296,11 +296,16 @@ function formatPlanList(plan) {
   return normalizePlanList(plan).join(', ');
 }
 
-function mergePlanValues(existingPlan, incomingPlan) {
-  const merged = [
-    ...normalizePlanList(existingPlan),
-    ...normalizePlanList(incomingPlan)
-  ];
+function mergePlanValues(existingPlan, incomingPlan, removePlans = []) {
+  const removeSet = new Set(
+    normalizePlanList(removePlans).map((plan) => plan.toLowerCase())
+  );
+
+  const kept = normalizePlanList(existingPlan).filter(
+    (plan) => !removeSet.has(plan.toLowerCase())
+  );
+
+  const merged = [...kept, ...normalizePlanList(incomingPlan)];
 
   return formatPlanList(merged);
 }
@@ -848,7 +853,7 @@ async function getStats() {
   }
 }
 
-async function upsertSubscriberFromHotmart({ name, email, phone, plan, status = 'active' }) {
+async function upsertSubscriberFromHotmart({ name, email, phone, plan, status = 'active', removePlans = [] }) {
   const normalizedEmail = normalizeEmail(email);
   // email normalizado no write
 
@@ -861,13 +866,16 @@ async function upsertSubscriberFromHotmart({ name, email, phone, plan, status = 
   const sanitizedStatus = status || 'active';
   const sanitizedPlan = plan && plan.trim ? plan.trim() : plan;
 
-  let finalPlan = formatPlanList(sanitizedPlan);
+  // Em uma migração (ex.: LITE -> VIP), removePlans lista os planos a retirar
+  // do assinante antes de acrescentar o novo. Assim o upgrade substitui apenas
+  // o plano de origem, preservando quaisquer outros planos ativos.
+  let finalPlan = mergePlanValues(null, sanitizedPlan, removePlans);
 
   try {
     const existing = await getSubscriberByEmail(normalizedEmail);
 
     if (existing) {
-      finalPlan = mergePlanValues(existing.plan, sanitizedPlan);
+      finalPlan = mergePlanValues(existing.plan, sanitizedPlan, removePlans);
     }
   } catch (error) {
     console.error('Erro ao mesclar planos existentes:', error);

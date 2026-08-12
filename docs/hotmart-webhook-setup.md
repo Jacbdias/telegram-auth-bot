@@ -11,8 +11,17 @@ Adicione os seguintes valores ao arquivo `.env` (ou às variáveis do serviço e
 | `HOTMART_WEBHOOK_SECRET` | Token secreto configurado no painel Hotmart para assinar os webhooks. Sem ele a requisição é rejeitada. |
 | `HOTMART_PLAN_MAP` | JSON que mapeia `offer.code`, `offer.id` ou `product.id` para o `plan` cadastrado no banco. Ex.: `{ "OFERTA_VIP": "vip", "123456": "premium" }`. |
 | `HOTMART_DEFAULT_PLAN` | (Opcional) Plano aplicado quando o evento não corresponde a nenhuma chave do `HOTMART_PLAN_MAP`. |
+| `HOTMART_MIGRATION_SOURCE_PLAN` | (Opcional) Plano de origem da migração LITE → VIP. Padrão: `Close Friends LITE`. |
+| `HOTMART_MIGRATION_TARGET_PLAN` | (Opcional) Plano de destino da migração. Padrão: `CF VIP - FATOS DA BOLSA 3`. |
+| `HOTMART_MIGRATION_KEYWORDS` | (Opcional) Lista separada por vírgula de termos que, no nome da oferta de um produto LITE, indicam migração. Padrão: `migração vip, migração, troca de plano, upgrade, vip`. O match ignora acentos e caixa. |
 
 > **Dica:** mantenha o JSON da variável `HOTMART_PLAN_MAP` simples, sem quebras de linha. Cada chave pode ser o código da oferta (mais comum), o ID numérico do produto ou até o nome do plano, desde que esteja em minúsculas para facilitar o match.
+
+### Migração LITE → VIP (upgrade de plano)
+
+Na Hotmart, a migração de um assinante LITE para VIP costuma acontecer **dentro do próprio plano LITE**: o produto/plano continua sendo `Close Friends LITE`, mas a **oferta** usada na cobrança da diferença tem um nome de migração (ex.: "Migração VIP", "VIP", "Troca de Plano"). Sem tratamento especial, o webhook interpretaria isso como uma simples venda de LITE.
+
+O sistema detecta esse caso automaticamente: quando o **produto base resolve para LITE** e o **nome da oferta** casa com uma das `HOTMART_MIGRATION_KEYWORDS`, o evento é tratado como upgrade. Nesse caso o plano de origem (`Close Friends LITE`) é **substituído** pelo de destino (`CF VIP - FATOS DA BOLSA 3`), preservando quaisquer outros planos que o assinante já possua (ex.: `Mentoria Renda Turbinada`). O usuário passa a ter direito aos canais VIP; para receber os novos links, ele deve enviar `/meuscanais` ao bot.
 
 ## 2. Criar o webhook na Hotmart
 

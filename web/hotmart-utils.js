@@ -139,6 +139,79 @@ function normalizeString(value) {
   return String(value).trim();
 }
 
+// Normaliza texto para comparação: remove acentos, espaços extras e caixa.
+// Usado para casar nomes de oferta ("Migração VIP") contra palavras-chave.
+function normalizeMatchKey(value) {
+  return normalizeString(value)
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .replace(/\s+/g, ' ')
+    .toLowerCase()
+    .trim();
+}
+
+// Plano de origem (LITE) e destino (VIP) da migração, configuráveis por env.
+const MIGRATION_SOURCE_PLAN = normalizeString(process.env.HOTMART_MIGRATION_SOURCE_PLAN) || 'Close Friends LITE';
+const MIGRATION_TARGET_PLAN = normalizeString(process.env.HOTMART_MIGRATION_TARGET_PLAN) || 'CF VIP - FATOS DA BOLSA 3';
+
+// Palavras-chave (já normalizadas) que, no nome da oferta de um produto LITE,
+// indicam uma migração/upgrade para o VIP. Configurável via
+// HOTMART_MIGRATION_KEYWORDS (lista separada por vírgula).
+const DEFAULT_MIGRATION_KEYWORDS = [
+  'migracao vip',
+  'migracao',
+  'troca de plano',
+  'troca de plano vip',
+  'troca',
+  'mudanca de plano',
+  'upgrade',
+  'vip'
+];
+
+const MIGRATION_KEYWORDS = (() => {
+  const custom = normalizeString(process.env.HOTMART_MIGRATION_KEYWORDS);
+  const source = custom
+    ? custom.split(',').map((item) => normalizeMatchKey(item)).filter(Boolean)
+    : DEFAULT_MIGRATION_KEYWORDS;
+
+  return [...new Set(source)];
+})();
+
+// Detecta se o evento representa uma migração LITE -> VIP.
+// A migração acontece "dentro" do plano LITE: o produto/plano continua sendo
+// LITE, mas a OFERTA usada carrega um nome de migração/upgrade. Por isso só
+// tratamos como migração quando (1) o plano base resolvido é LITE e (2) o nome
+// da oferta (ou do plano) casa com alguma palavra-chave de migração.
+function resolveMigration(subscriberData = {}, basePlan = null) {
+  const baseKey = normalizeMatchKey(basePlan);
+  const baseIsLite =
+    !!baseKey &&
+    (baseKey.includes('lite') || baseKey === normalizeMatchKey(MIGRATION_SOURCE_PLAN));
+
+  if (!baseIsLite) {
+    return { isMigration: false };
+  }
+
+  const haystacks = [subscriberData.offerName, subscriberData.planName]
+    .map((value) => normalizeMatchKey(value))
+    .filter(Boolean);
+
+  const matched = haystacks.some((text) =>
+    MIGRATION_KEYWORDS.some((keyword) => keyword && text.includes(keyword))
+  );
+
+  if (!matched) {
+    return { isMigration: false };
+  }
+
+  return {
+    isMigration: true,
+    sourcePlan: MIGRATION_SOURCE_PLAN,
+    targetPlan: MIGRATION_TARGET_PLAN,
+    removePlans: [MIGRATION_SOURCE_PLAN]
+  };
+}
+
 function verifyHotmartSignature(rawBody, signature, secret) {
   if (!secret) {
     return false;
@@ -282,6 +355,7 @@ function extractSubscriberData(payload = {}) {
 
   const offerCode = normalizeString(offer.code || offer.offer_code || offer.offer_code_hash || purchase.offer_code);
   const offerId = normalizeString(offer.id || offer.offer_id);
+  const offerName = normalizeString(offer.name || offer.offer_name || purchase.offer?.name || purchase.offer_name);
   const productId = normalizeString(product.id || product.product_id || purchase.product_id);
   const productName = normalizeString(product.name || purchase.product_name);
   const planCandidates = [
@@ -307,6 +381,7 @@ function extractSubscriberData(payload = {}) {
     phone,
     offerCode,
     offerId,
+    offerName,
     productId,
     productName,
     planName
@@ -454,7 +529,12 @@ module.exports = {
   verifyHotmartSignature,
   extractSubscriberData,
   resolvePlanFromMapping,
+  resolveMigration,
   normalizePlanMapping,
+  normalizeMatchKey,
   getEventType,
-  getStatusFromPayload
+  getStatusFromPayload,
+  MIGRATION_SOURCE_PLAN,
+  MIGRATION_TARGET_PLAN,
+  MIGRATION_KEYWORDS
 };
