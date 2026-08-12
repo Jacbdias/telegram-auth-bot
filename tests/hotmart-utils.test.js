@@ -6,9 +6,12 @@ const {
   verifyHotmartSignature,
   extractSubscriberData,
   resolvePlanFromMapping,
+  resolveMigration,
   ACTIVATION_EVENTS,
   DEACTIVATION_EVENTS,
-  getEventType
+  getEventType,
+  MIGRATION_SOURCE_PLAN,
+  MIGRATION_TARGET_PLAN
 } = require('../web/hotmart-utils');
 
 test('verifyHotmartSignature valida HMAC SHA256 do Hotmart', () => {
@@ -124,6 +127,51 @@ test('resolvePlanFromMapping prioriza ID do produto quando há fallback interno,
   };
 
   assert.equal(resolvePlanFromMapping({}, subscriber), 'Mentoria Renda Turbinada');
+});
+
+test('extractSubscriberData captura o nome da oferta (offerName)', () => {
+  const payload = {
+    event: 'purchase.approved',
+    data: {
+      buyer: { email: 'cliente@email.com', name: 'Cliente' },
+      offer: { code: 'OF999', name: 'Migração VIP' },
+      product: { id: 5060609, name: 'Close Friends LITE' }
+    }
+  };
+
+  const result = extractSubscriberData(payload);
+
+  assert.equal(result.offerName, 'Migração VIP');
+  assert.equal(result.productName, 'Close Friends LITE');
+});
+
+test('resolveMigration detecta migração LITE -> VIP por várias formas no nome da oferta', () => {
+  const variantes = [
+    'Migração VIP',
+    'migracao vip',
+    'VIP',
+    'Migração',
+    'Troca de Plano',
+    'Upgrade para VIP'
+  ];
+
+  for (const offerName of variantes) {
+    const result = resolveMigration({ offerName }, MIGRATION_SOURCE_PLAN);
+    assert.equal(result.isMigration, true, `deveria migrar para oferta "${offerName}"`);
+    assert.equal(result.targetPlan, MIGRATION_TARGET_PLAN);
+    assert.deepEqual(result.removePlans, [MIGRATION_SOURCE_PLAN]);
+  }
+});
+
+test('resolveMigration ignora compra normal de LITE sem palavra-chave de migração', () => {
+  const result = resolveMigration({ offerName: 'Plano Anual LITE' }, MIGRATION_SOURCE_PLAN);
+  assert.equal(result.isMigration, false);
+});
+
+test('resolveMigration não dispara quando o produto base não é LITE', () => {
+  // Mesmo com "vip" no nome da oferta, se o produto não é LITE não é migração.
+  const result = resolveMigration({ offerName: 'Oferta VIP' }, 'Mentoria Renda Turbinada');
+  assert.equal(result.isMigration, false);
 });
 
 test('listas de eventos incluem ativações e cancelamentos esperados', () => {

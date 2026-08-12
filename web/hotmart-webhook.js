@@ -14,6 +14,7 @@ const {
   verifyHotmartSignature,
   extractSubscriberData,
   resolvePlanFromMapping,
+  resolveMigration,
   getEventType,
   getStatusFromPayload
 } = require('./hotmart-utils');
@@ -68,7 +69,14 @@ async function processHotmartEvent(payload) {
     throw err;
   }
 
-  const plan = resolvePlanFromMapping(PLAN_MAPPING, subscriberData, DEFAULT_PLAN);
+  const basePlan = resolvePlanFromMapping(PLAN_MAPPING, subscriberData, DEFAULT_PLAN);
+
+  // Migração LITE -> VIP: a compra chega como produto LITE, mas a oferta indica
+  // a troca de plano. Nesse caso, o plano efetivo é o VIP de destino e o LITE de
+  // origem é removido (substituição), preservando outros planos do assinante.
+  const migration = resolveMigration(subscriberData, basePlan);
+  const plan = migration.isMigration ? migration.targetPlan : basePlan;
+  const removePlans = migration.isMigration ? migration.removePlans : [];
 
   if (!plan) {
     const err = new Error('Plano não configurado para o evento recebido');
@@ -82,7 +90,8 @@ async function processHotmartEvent(payload) {
       email: sanitizedEmail,
       phone: sanitizedPhone,
       plan,
-      status: 'active'
+      status: 'active',
+      removePlans
     });
 
     if (record?.id) {
@@ -104,10 +113,20 @@ async function processHotmartEvent(payload) {
       action: 'activation',
       email: sanitizedEmail,
       plan: sanitizeText(plan, 255),
-      subscriber_id: record?.id || null
+      subscriber_id: record?.id || null,
+      migration: migration.isMigration || false,
+      migrated_from: migration.isMigration ? sanitizeText(migration.sourcePlan, 255) : null
     });
 
-    return { action: 'activated', subscriberId: record?.id || null, plan };
+    return {
+      action: 'activated',
+      subscriberId: record?.id || null,
+      plan,
+      migration: migration.isMigration || false,
+      ...(migration.isMigration
+        ? { migratedFrom: migration.sourcePlan, migratedTo: migration.targetPlan }
+        : {})
+    };
   }
 
   const record = await db.deactivateSubscriberByEmail(sanitizedEmail, { plan: sanitizeText(plan, 255) });
