@@ -48,7 +48,8 @@ const DEFAULT_SUBSCRIBER_PLANS = [
     'Close Friends LITE',
     'Mentoria Renda Turbinada',
     'Canal Renda Turbinada',
-    'Projeto Renda Passiva'
+    'Projeto Renda Passiva',
+    'Projeto Trump'
 ];
 
 if (authToken && !authToken.includes(':')) {

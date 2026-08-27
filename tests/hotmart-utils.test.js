@@ -120,6 +120,16 @@ test('resolvePlanFromMapping usa IDs dos produtos Close Friends sem precisar de 
   assert.equal(resolvePlanFromMapping({}, { productId: '5325106' }), 'Projeto Trump');
 });
 
+test('resolvePlanFromMapping reconhece o Projeto Trump pelo nome do produto/plano', () => {
+  assert.equal(resolvePlanFromMapping({}, { productName: 'Projeto Trump' }), 'Projeto Trump');
+  assert.equal(resolvePlanFromMapping({}, { productName: 'PROJETO TRUMP' }), 'Projeto Trump');
+  assert.equal(resolvePlanFromMapping({}, { planName: 'projeto trump' }), 'Projeto Trump');
+  assert.equal(
+    resolvePlanFromMapping({}, { productId: '5325106', planName: 'Close Friends LITE' }),
+    'Projeto Trump'
+  );
+});
+
 test('resolvePlanFromMapping prioriza ID do produto quando há fallback interno, mesmo com planName divergente', () => {
   const subscriber = {
     productId: '6558190', // Mentoria Renda Turbinada (fallback interno)
