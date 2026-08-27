@@ -214,6 +214,14 @@ async function ensureSchema() {
         link: 'https://web.telegram.org/k/#-3738415907',
         plan: 'Canal Renda Turbinada',
         orderIndex: 0
+      },
+      {
+        name: 'Projeto Trump',
+        chatId: '-1002441831755',
+        description: 'Canal do Projeto Trump',
+        link: 'https://web.telegram.org/k/#-2441831755',
+        plan: 'Projeto Trump',
+        orderIndex: 0
       }
     ];
 
