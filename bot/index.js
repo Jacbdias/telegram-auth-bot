@@ -6,13 +6,24 @@ const logger = require('../shared/logger');
 const alerts = require('../shared/alerts');
 const metrics = require('../shared/metrics-collector');
 const { withRetry, sleep } = require('../shared/retry');
+const { decideJoinRequest } = require('./join-request-policy');
 
 const token = process.env.TELEGRAM_BOT_TOKEN;
 const rawWebAppUrl = process.env.WEB_APP_URL;
 const webAppUrl = rawWebAppUrl ? rawWebAppUrl.replace(/\/+$/, '') : '';
 const supportUsername = process.env.SUPPORT_USERNAME || '@suportefatosdabolsa';
 
-const bot = new TelegramBot(token, { polling: true });
+// Ao declarar allowed_updates é obrigatório listar TODOS os tipos usados: o
+// Telegram passa a entregar apenas os citados. chat_join_request não vem por
+// padrão, por isso precisa estar aqui — sem ele o handler nunca dispara.
+const ALLOWED_UPDATES = ['message', 'callback_query', 'chat_join_request'];
+
+const bot = new TelegramBot(token, {
+  polling: {
+    // A API espera uma lista JSON-serializada, não um array de formulário.
+    params: { allowed_updates: JSON.stringify(ALLOWED_UPDATES) }
+  }
+});
 alerts.init(bot, process.env.ALERT_CHAT_ID);
 
 const INVITE_DURATION_HOURS = 72;
@@ -375,6 +386,56 @@ bot.onText(/\/meuscanais/, async (msg) => {
     await safeSendMessage(chatId, message, { parse_mode: 'HTML', disable_web_page_preview: true });
   } catch (error) {
     console.error('Erro ao enviar canais do usuário:', error.message);
+  }
+});
+
+// Aprova na hora quem entra por link com creates_join_request e já está
+// autorizado. Sem este handler os pedidos ficavam parados esperando aprovação
+// manual, mesmo com a flag ligada no canal.
+bot.on('chat_join_request', async (request) => {
+  const chatId = request?.chat?.id;
+  const telegramId = request?.from?.id;
+
+  if (!chatId || !telegramId) {
+    return;
+  }
+
+  const telegramIdStr = telegramId.toString();
+  const chatIdStr = chatId.toString();
+
+  try {
+    const user = await getCachedUserByTelegramId(telegramIdStr);
+    const channels = user ? await getCachedChannelsForPlan(user.plan) : [];
+    const decision = decideJoinRequest(user, channels, chatIdStr);
+
+    if (!decision.approve) {
+      // Deixa pendente de propósito — ver bot/join-request-policy.js.
+      logger.info('join_request_pending', {
+        telegram_id: telegramIdStr,
+        chat_id: chatIdStr,
+        reason: decision.reason
+      });
+      return;
+    }
+
+    await bot.approveChatJoinRequest(chatId, telegramId);
+
+    // O usuário virou membro agora; o cache diria que não é.
+    cache.invalidate(`membership:${telegramIdStr}:${decision.channel.id}`);
+
+    console.log(`✅ Pedido de entrada aprovado: ${telegramIdStr} em ${decision.channel.name}`);
+    logger.info('join_request_approved', {
+      telegram_id: telegramIdStr,
+      chat_id: chatIdStr,
+      channel_id: decision.channel.id
+    });
+  } catch (error) {
+    console.error(`Erro ao processar pedido de entrada de ${telegramIdStr}:`, error.message);
+    logger.error('join_request_error', {
+      telegram_id: telegramIdStr,
+      chat_id: chatIdStr,
+      error: error.message
+    });
   }
 });
 
