@@ -1104,6 +1104,187 @@ async function deactivateSubscriberByEmail(email, { plan } = {}) {
   }
 }
 
+// ============== ACESSO ATÉ O FIM DO PERÍODO PAGO ==============
+//
+// `subscriber_plan_access` guarda, por (assinante, plano), até quando o acesso
+// vale depois de um cancelamento de renovação (regra 1 do Davi: o acesso vai
+// até o fim do período já pago). O job diário
+// (web/plan-access-job.js) é que remove o plano quando a data passa.
+//
+// A tabela é criada por SQL MANUAL (sql/subscriber-plan-access.sql) — não
+// entra no ensureSchema. Enquanto o SQL não rodar, estas funções devolvem
+// null/[] e apenas registram um aviso: NINGUÉM é cortado e o webhook continua
+// funcionando normalmente.
+
+const UNDEFINED_TABLE_ERROR = '42P01';
+const PLAN_ACCESS_TABLE = 'subscriber_plan_access';
+
+function isMissingTableError(error) {
+  if (!error) {
+    return false;
+  }
+
+  if (error.code === UNDEFINED_TABLE_ERROR) {
+    return true;
+  }
+
+  const message = String(error.message || '').toLowerCase();
+  return message.includes(PLAN_ACCESS_TABLE) && message.includes('does not exist');
+}
+
+function warnMissingPlanAccessTable(operation) {
+  logger.warn('plan_access_table_missing', {
+    operation,
+    table: PLAN_ACCESS_TABLE,
+    hint: 'rode sql/subscriber-plan-access.sql no banco do bot'
+  });
+}
+
+// Grava/atualiza até quando o plano continua valendo. Devolve null quando a
+// tabela ainda não existe (nada é cortado nesse caso).
+async function setPlanAccessUntil({ subscriberId, plan, accessUntil, reason = null }) {
+  const normalizedPlan = String(plan || '').trim();
+
+  if (!subscriberId || !normalizedPlan || !accessUntil) {
+    return null;
+  }
+
+  const accessUntilDate = accessUntil instanceof Date ? accessUntil : new Date(accessUntil);
+
+  if (Number.isNaN(accessUntilDate.getTime())) {
+    return null;
+  }
+
+  try {
+    const result = await timedQuery(
+      'set_plan_access_until',
+      `INSERT INTO subscriber_plan_access (subscriber_id, plan, access_until, reason)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT (subscriber_id, plan) DO UPDATE
+         SET access_until = EXCLUDED.access_until,
+             reason = EXCLUDED.reason,
+             updated_at = NOW()
+       RETURNING id, subscriber_id, plan, access_until, reason`,
+      [subscriberId, normalizedPlan, accessUntilDate.toISOString(), reason]
+    );
+
+    return result.rows[0] || null;
+  } catch (error) {
+    if (isMissingTableError(error)) {
+      warnMissingPlanAccessTable('set_plan_access_until');
+      return null;
+    }
+
+    throw error;
+  }
+}
+
+// Apaga o agendamento de um ou mais planos. Uma ativação nova do mesmo plano
+// chama isto: a pessoa reativou ou comprou de novo.
+async function clearPlanAccessUntil({ subscriberId, plan }) {
+  const plans = normalizePlanList(plan);
+
+  if (!subscriberId || plans.length === 0) {
+    return 0;
+  }
+
+  try {
+    const result = await timedQuery(
+      'clear_plan_access_until',
+      `DELETE FROM subscriber_plan_access
+       WHERE subscriber_id = $1
+         AND LOWER(TRIM(plan)) = ANY($2::text[])`,
+      [subscriberId, plans.map((item) => item.toLowerCase())]
+    );
+
+    return result.rowCount || 0;
+  } catch (error) {
+    if (isMissingTableError(error)) {
+      warnMissingPlanAccessTable('clear_plan_access_until');
+      return 0;
+    }
+
+    throw error;
+  }
+}
+
+// Planos cujo acesso já venceu, com o email do assinante para a remoção.
+async function listExpiredPlanAccess(now = new Date()) {
+  const reference = now instanceof Date ? now : new Date(now);
+
+  try {
+    const result = await timedQuery(
+      'list_expired_plan_access',
+      `SELECT spa.id, spa.subscriber_id, spa.plan, spa.access_until, spa.reason,
+              s.email, s.plan AS subscriber_plan
+       FROM subscriber_plan_access spa
+       JOIN subscribers s ON s.id = spa.subscriber_id
+       WHERE spa.access_until <= $1
+       ORDER BY spa.access_until ASC`,
+      [reference.toISOString()]
+    );
+
+    return result.rows;
+  } catch (error) {
+    if (isMissingTableError(error)) {
+      warnMissingPlanAccessTable('list_expired_plan_access');
+      return [];
+    }
+
+    throw error;
+  }
+}
+
+async function deletePlanAccessById(id) {
+  if (!id) {
+    return 0;
+  }
+
+  try {
+    const result = await timedQuery(
+      'delete_plan_access_by_id',
+      `DELETE FROM subscriber_plan_access WHERE id = $1`,
+      [id]
+    );
+
+    return result.rowCount || 0;
+  } catch (error) {
+    if (isMissingTableError(error)) {
+      warnMissingPlanAccessTable('delete_plan_access_by_id');
+      return 0;
+    }
+
+    throw error;
+  }
+}
+
+// Agendamentos de um assinante — usado para conferir o job.
+async function getPlanAccessBySubscriberId(subscriberId) {
+  if (!subscriberId) {
+    return [];
+  }
+
+  try {
+    const result = await timedQuery(
+      'get_plan_access_by_subscriber_id',
+      `SELECT id, subscriber_id, plan, access_until, reason, created_at, updated_at
+       FROM subscriber_plan_access
+       WHERE subscriber_id = $1
+       ORDER BY plan ASC`,
+      [subscriberId]
+    );
+
+    return result.rows;
+  } catch (error) {
+    if (isMissingTableError(error)) {
+      warnMissingPlanAccessTable('get_plan_access_by_subscriber_id');
+      return [];
+    }
+
+    throw error;
+  }
+}
+
 // Busca usuário autorizado por subscriber_id
 async function getAuthorizedUsersBySubscriberId(subscriberId) {
   try {
@@ -1524,5 +1705,12 @@ module.exports = {
   updateChannel,
   deleteChannel,
   getAuthorizationLogs,
-  deactivateSubscriberByEmail
+  deactivateSubscriberByEmail,
+  // Acesso até o fim do período pago
+  setPlanAccessUntil,
+  clearPlanAccessUntil,
+  listExpiredPlanAccess,
+  deletePlanAccessById,
+  getPlanAccessBySubscriberId,
+  isMissingTableError
 };

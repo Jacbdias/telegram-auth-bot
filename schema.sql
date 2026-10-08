@@ -74,6 +74,23 @@ CREATE TABLE IF NOT EXISTS user_invite_links (
 CREATE INDEX IF NOT EXISTS idx_user_invite_links_telegram ON user_invite_links(telegram_id);
 
 
+-- Acesso até o fim do período já pago (cancelamento de renovação)
+-- Em bancos já existentes, rode sql/subscriber-plan-access.sql (reexecutável).
+CREATE TABLE IF NOT EXISTS subscriber_plan_access (
+    id SERIAL PRIMARY KEY,
+    subscriber_id INTEGER NOT NULL REFERENCES subscribers(id) ON DELETE CASCADE,
+    plan TEXT NOT NULL,
+    access_until TIMESTAMPTZ NOT NULL,
+    reason VARCHAR(80),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT subscriber_plan_access_subscriber_plan_key UNIQUE (subscriber_id, plan)
+);
+
+CREATE INDEX IF NOT EXISTS idx_subscriber_plan_access_until ON subscriber_plan_access (access_until);
+CREATE INDEX IF NOT EXISTS idx_subscriber_plan_access_subscriber ON subscriber_plan_access (subscriber_id);
+
+
 -- Tabela de logs de autorização
 CREATE TABLE IF NOT EXISTS authorization_logs (
     id SERIAL PRIMARY KEY,

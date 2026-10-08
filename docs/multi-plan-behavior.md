@@ -4,9 +4,15 @@
 - O registro do assinante armazena todos os planos mesclados no campo `plan` (por exemplo: `CF VIP - FATOS DA BOLSA 3, Mentoria Renda Turbinada`).
 - Se o assinante já se autenticou no bot, ele continua autorizado — não é necessário refazer a verificação.
 
-## Exceção: migração LITE → VIP via webhook (substituição, não mesclagem)
+## Exceção 1: cancelamento de renovação (remoção só de um plano, e só depois da data)
+- `SUBSCRIPTION_CANCELLATION` **não** corta na hora. O bot grava em `subscriber_plan_access` até quando aquele plano vale (a data vem de `data.date_next_charge`) e o job diário remove **só aquele plano** quando a data passa.
+- As outras assinaturas da pessoa continuam valendo, e os convites/canais revogados são apenas os do plano que venceu.
+- Reembolso, chargeback e disputa continuam cortando na hora. Detalhes em [hotmart-access-rules.md](./hotmart-access-rules.md).
+
+## Exceção 2: migração LITE → VIP via webhook (substituição, não mesclagem)
 - A regra geral acima é de **acúmulo** (novos planos são mesclados). A migração LITE → VIP é a exceção: em vez de mesclar, ela **substitui** o plano de origem pelo de destino.
-- O webhook identifica a migração quando o produto base resolve para LITE e o **nome da oferta** contém um termo de migração (`migração vip`, `vip`, `troca de plano`, etc. — ver `HOTMART_MIGRATION_KEYWORDS`).
+- O webhook identifica a migração de duas formas, nesta ordem: (1) pelo **id do plano** da Hotmart, quando um plano VIP é vendido dentro de um produto LITE (lista confirmada pelo Davi, ver [hotmart-access-rules.md](./hotmart-access-rules.md)); (2) como reserva, para payloads sem `plan.id`, quando o produto base resolve para LITE e o **nome da oferta** contém um termo de migração (`migração vip`, `vip`, `troca de plano`, etc. — ver `HOTMART_MIGRATION_KEYWORDS`).
+- A troca nativa da Hotmart (`SWITCH_PLAN`) migra pelo mesmo caminho, mas só quando o plano novo é VIP pelo mapa **e** a pessoa já tem o LITE no bot. Qualquer outra troca — inclusive a troca para baixo — é registrada para revisão e não muda nada.
 - Ao migrar, o `Close Friends LITE` é removido e o `CF VIP - FATOS DA BOLSA 3` é adicionado. **Outros planos do assinante são preservados** (ex.: `Mentoria Renda Turbinada`).
 - Como em qualquer atualização de plano, o bot **não** reenvia os convites automaticamente: o assinante deve usar `/meuscanais` para gerar os links dos novos canais VIP.
 

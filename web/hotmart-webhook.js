@@ -1,156 +1,23 @@
 const express = require('express');
-const db = require('./database');
-const cache = require('../bot/cache');
 const logger = require('../shared/logger');
 const metrics = require('../shared/metrics-collector');
 const alerts = require('../shared/alerts');
 const webhookQueue = require('../shared/webhook-queue');
-const { sanitizeEmail, sanitizeText } = require('../shared/sanitize');
-const {
-  ACTIVATION_EVENTS,
-  DEACTIVATION_EVENTS,
-  ACTIVATION_STATUSES,
-  DEACTIVATION_STATUSES,
-  verifyHotmartSignature,
-  extractSubscriberData,
-  resolvePlanFromMapping,
-  resolveMigration,
-  getEventType,
-  getStatusFromPayload
-} = require('./hotmart-utils');
+const { sanitizeEmail } = require('../shared/sanitize');
+const { createHotmartProcessor } = require('./hotmart-processor');
+const { verifyHotmartSignature, timingSafeHottokMatches } = require('./hotmart-utils');
 
 const router = express.Router();
 
 const WEBHOOK_SECRET = process.env.HOTMART_WEBHOOK_SECRET || '';
-const PLAN_MAPPING = process.env.HOTMART_PLAN_MAP || '';
-const DEFAULT_PLAN = process.env.HOTMART_DEFAULT_PLAN || process.env.DEFAULT_PLAN || null;
 const WEBHOOK_RETRY_INTERVAL_MS = Number(process.env.WEBHOOK_RETRY_INTERVAL_MS || 30000);
 const WEBHOOK_STALE_MAX_AGE_MS = Number(process.env.WEBHOOK_STALE_MAX_AGE_MS || 15 * 60 * 1000);
 const WEBHOOK_QUEUE_MONITOR_INTERVAL_MS = Number(process.env.WEBHOOK_QUEUE_MONITOR_INTERVAL_MS || 2 * 60 * 1000);
 
+// As regras de negócio vivem em web/hotmart-processor.js.
+const { processHotmartEvent } = createHotmartProcessor();
+
 router.use(express.raw({ type: '*/*', limit: '2mb' }));
-
-async function processHotmartEvent(payload) {
-  const eventType = getEventType(payload);
-  const normalizedStatus = getStatusFromPayload(payload);
-  logger.incrementWebhook('hotmart');
-  metrics.increment('webhook_received');
-  metrics.increment('webhook_hotmart');
-
-  let action = null;
-  let actionSource = null;
-
-  if (eventType && ACTIVATION_EVENTS.has(eventType)) {
-    action = 'activation';
-    actionSource = 'event';
-  } else if (eventType && DEACTIVATION_EVENTS.has(eventType)) {
-    action = 'deactivation';
-    actionSource = 'event';
-  } else if (normalizedStatus && ACTIVATION_STATUSES.has(normalizedStatus)) {
-    action = 'activation';
-    actionSource = 'status';
-  } else if (normalizedStatus && DEACTIVATION_STATUSES.has(normalizedStatus)) {
-    action = 'deactivation';
-    actionSource = 'status';
-  }
-
-  if (!action) {
-    return { ignored: true, action: null };
-  }
-
-  const subscriberData = extractSubscriberData(payload);
-  const sanitizedEmail = sanitizeEmail(subscriberData.email);
-  const sanitizedName = sanitizeText(subscriberData.name || sanitizedEmail, 255);
-  const sanitizedPhone = sanitizeText(subscriberData.phone || '', 30);
-
-  if (!sanitizedEmail) {
-    const err = new Error('Email não encontrado no payload');
-    err.statusCode = 400;
-    throw err;
-  }
-
-  const basePlan = resolvePlanFromMapping(PLAN_MAPPING, subscriberData, DEFAULT_PLAN);
-
-  // Migração LITE -> VIP: a compra chega como produto LITE, mas a oferta indica
-  // a troca de plano. Nesse caso, o plano efetivo é o VIP de destino e o LITE de
-  // origem é removido (substituição), preservando outros planos do assinante.
-  const migration = resolveMigration(subscriberData, basePlan);
-  const plan = migration.isMigration ? migration.targetPlan : basePlan;
-  const removePlans = migration.isMigration ? migration.removePlans : [];
-
-  if (!plan) {
-    const err = new Error('Plano não configurado para o evento recebido');
-    err.statusCode = 422;
-    throw err;
-  }
-
-  if (action === 'activation') {
-    const record = await db.upsertSubscriberFromHotmart({
-      name: sanitizedName,
-      email: sanitizedEmail,
-      phone: sanitizedPhone,
-      plan,
-      status: 'active',
-      removePlans
-    });
-
-    if (record?.id) {
-      cache.invalidate(`sub:${record.id}`);
-    }
-
-    if (record?.id) {
-      await db.logWebhookAuthorization({
-        subscriberId: record.id,
-        action: 'authorized',
-        platform: 'HOTMART',
-        eventType,
-        status: normalizedStatus,
-        source: actionSource
-      });
-    }
-
-    logger.info('webhook_hotmart_processed', {
-      action: 'activation',
-      email: sanitizedEmail,
-      plan: sanitizeText(plan, 255),
-      subscriber_id: record?.id || null,
-      migration: migration.isMigration || false,
-      migrated_from: migration.isMigration ? sanitizeText(migration.sourcePlan, 255) : null
-    });
-
-    return {
-      action: 'activated',
-      subscriberId: record?.id || null,
-      plan,
-      migration: migration.isMigration || false,
-      ...(migration.isMigration
-        ? { migratedFrom: migration.sourcePlan, migratedTo: migration.targetPlan }
-        : {})
-    };
-  }
-
-  const record = await db.deactivateSubscriberByEmail(sanitizedEmail, { plan: sanitizeText(plan, 255) });
-  if (record?.id) {
-    await db.logWebhookAuthorization({
-      subscriberId: record.id,
-      action: 'revoked',
-      platform: 'HOTMART',
-      eventType,
-      status: normalizedStatus,
-      source: actionSource
-    });
-  }
-  if (record?.id) cache.invalidate(`sub:${record.id}`);
-
-  logger.info('webhook_hotmart_processed', {
-    action: 'deactivation',
-    email: sanitizedEmail,
-    plan: sanitizeText(plan, 255),
-    subscriber_id: record?.id || null
-  });
-
-  return { action: 'deactivated', subscriberId: record?.id || null, plan };
-}
 
 function isRetryableWebhookError(error) {
   const statusCode = Number(error?.statusCode || error?.response?.status || 0);
@@ -166,7 +33,8 @@ router.post('/', async (req, res) => {
   const hottok = req.get('X-Hotmart-Hottok');
 
   if (hottok) {
-    if (hottok !== WEBHOOK_SECRET) {
+    // Comparação em tempo constante sobre o SHA-256 dos dois lados.
+    if (!timingSafeHottokMatches(hottok, WEBHOOK_SECRET)) {
       return res.status(401).json({ success: false, message: 'Hottok inválido' });
     }
   } else if (!verifyHotmartSignature(rawBody, signature, WEBHOOK_SECRET)) {
@@ -183,7 +51,9 @@ router.post('/', async (req, res) => {
   try {
     const result = await processHotmartEvent(payload);
     if (result.ignored) {
-      return res.status(202).json({ success: true, message: 'Evento ignorado' });
+      return res
+        .status(202)
+        .json({ success: true, message: 'Evento ignorado', reason: result.reason || null });
     }
     return res.json({ success: true, ...result });
   } catch (error) {
