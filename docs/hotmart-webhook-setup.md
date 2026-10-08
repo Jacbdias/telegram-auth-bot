@@ -17,6 +17,10 @@ Adicione os seguintes valores ao arquivo `.env` (ou às variáveis do serviço e
 
 > **Dica:** mantenha o JSON da variável `HOTMART_PLAN_MAP` simples, sem quebras de linha. Cada chave pode ser o código da oferta (mais comum), o ID numérico do produto ou até o nome do plano, desde que esteja em minúsculas para facilitar o match.
 
+> As regras completas de acesso (cancelamento, reembolso, atraso, rebaixamento e
+> o mapa por id do plano) estão em
+> [hotmart-access-rules.md](./hotmart-access-rules.md).
+
 ### Migração LITE → VIP (upgrade de plano)
 
 Na Hotmart, a migração de um assinante LITE para VIP costuma acontecer **dentro do próprio plano LITE**: o produto/plano continua sendo `Close Friends LITE`, mas a **oferta** usada na cobrança da diferença tem um nome de migração (ex.: "Migração VIP", "VIP", "Troca de Plano"). Sem tratamento especial, o webhook interpretaria isso como uma simples venda de LITE.
@@ -32,14 +36,22 @@ O sistema detecta esse caso automaticamente: quando o **produto base resolve par
    - **URL:** `https://SEU_DOMÍNIO/api/hotmart/webhook` (use HTTPS). Em ambiente local você pode usar um túnel (ngrok) para testar.
    - **Token secreto:** gere uma sequência aleatória e copie para `HOTMART_WEBHOOK_SECRET`.
 4. Na seção **Eventos**, marque pelo menos:
-   - `purchase.approved`
-   - `purchase.completed`
-   - `subscription.approved`
-   - `subscription.renewed`
-   - `purchase.canceled`
-   - `purchase.refunded`
-   - `subscription.canceled`
+   - `PURCHASE_APPROVED`
+   - `PURCHASE_COMPLETE`
+   - `PURCHASE_REFUNDED`
+   - `PURCHASE_CHARGEBACK`
+   - `PURCHASE_PROTEST`
+   - `PURCHASE_DELAYED`
+   - `SUBSCRIPTION_CANCELLATION`
+   - `SWITCH_PLAN`
 5. Salve o webhook.
+
+> **Importante:** `SUBSCRIPTION_CANCELLATION` **não** corta o acesso na hora — o
+> acesso vai até o fim do período já pago. Isso depende da tabela
+> `subscriber_plan_access`: rode `sql/subscriber-plan-access.sql` no banco do
+> **bot** (o `DATABASE_URL` do serviço do bot, não o do portal). Sem a tabela o
+> bot funciona, mas o cancelamento só é registrado no log. Ver
+> [hotmart-access-rules.md](./hotmart-access-rules.md).
 
 ## 3. Mapear ofertas para planos
 
@@ -68,7 +80,8 @@ No código o mapeamento é lido de forma case-insensitive, então `oferta_vip` e
 ## 5. Fluxo após o webhook
 
 - Compras aprovadas executam `upsertSubscriberFromHotmart`: o assinante é criado/atualizado como `active` e com o plano correto.
-- Cancelamentos, estornos ou suspensões executam `deactivateSubscriberByEmail`: o status vira `inactive` e o bot revoga o acesso/links existentes.
+- **Cancelamento de renovação** grava `access_until` em `subscriber_plan_access` e o job diário remove só aquele plano depois da data.
+- Estornos, chargebacks, disputas, expiração, suspensão e atraso executam `deactivateSubscriberByEmail`: o plano sai na hora e o bot revoga o acesso/links daquele plano.
 - O usuário precisa apenas abrir o bot e informar email/telefone. Se já estiver autorizado, pode usar `/meuscanais` para gerar novos convites.
 
 Com isso, as vendas da Hotmart passam a atualizar o bot automaticamente, sem necessidade de planilhas intermediárias.

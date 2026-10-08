@@ -4,6 +4,7 @@ const path = require('path');
 const db = require('./database');
 const { bot, validateToken, consumeToken, notifyUserAuthorized, stopBotIntervals } = require('../bot/index');
 const hotmartWebhook = require('./hotmart-webhook');
+const { startPlanAccessExpiryJob, stopPlanAccessExpiryJob } = require('./plan-access-job');
 const cache = require('../bot/cache');
 const logger = require('../shared/logger');
 const metrics = require('../shared/metrics-collector');
@@ -254,6 +255,10 @@ app.use('/api/admin', createAdminRouter({
   getBotPollingStatus: () => Boolean(bot && typeof bot.isPolling === 'function' ? bot.isPolling() : false)
 }));
 
+// Job diário que corta quem passou do fim do período pago (cancelamento de
+// renovação). Sem a tabela subscriber_plan_access ele não faz nada.
+startPlanAccessExpiryJob();
+
 const server = app.listen(PORT, () => {
   console.log(`🚀 Servidor rodando na porta ${PORT}`);
   console.log(`🌐 Acesse: http://localhost:${PORT}`);
@@ -274,6 +279,7 @@ async function gracefulShutdown(signal) {
       adminLoginRateLimiter.stop();
       internalApiRateLimiter.stop();
       clearInterval(verificationCleanupInterval);
+      stopPlanAccessExpiryJob();
       stopBotIntervals();
       if (typeof hotmartWebhook.stopWebhookRetryInterval === 'function') {
         hotmartWebhook.stopWebhookRetryInterval();

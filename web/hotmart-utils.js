@@ -78,12 +78,6 @@ const DEACTIVATION_EVENTS = new Set([
   'purchase_protest',
   'purchase.dispute',
   'purchase_dispute',
-  'subscription.canceled',
-  'subscription_canceled',
-  'subscription.cancelled',
-  'subscription_cancelled',
-  'subscription.cancellation',    // ← ADICIONAR
-  'subscription_cancellation',    // ← ADICIONAR
   'subscription.deactivated',
   'subscription_deactivated',
   'subscription.expired',
@@ -92,6 +86,48 @@ const DEACTIVATION_EVENTS = new Set([
   'subscription_suspended'
 ]);
 
+// Cancelamento de renovação. NÃO corta na hora (regra 1 do Davi): o acesso
+// vai até o fim do período já pago. O webhook grava `access_until` para o
+// plano daquela assinatura e o job diário é que remove o plano quando a data
+// passa. Antes deste PR estes eventos estavam em DEACTIVATION_EVENTS e
+// cortavam no mesmo dia.
+//
+// Todas as grafias da MESMA regra de negócio entram aqui — o evento v2.0 é
+// `SUBSCRIPTION_CANCELLATION`, e as variações `subscription.canceled` /
+// `subscription_cancelled` (webhook v1.0) descrevem o mesmo cancelamento de
+// renovação. Deixá-las em DEACTIVATION_EVENTS manteria o corte imediato para
+// quem usa o formato antigo, contrariando a regra 1.
+const CANCELLATION_EVENTS = new Set([
+  'subscription.cancellation',
+  'subscription_cancellation',
+  'subscription.canceled',
+  'subscription_canceled',
+  'subscription.cancelled',
+  'subscription_cancelled'
+]);
+
+// Troca nativa de plano da Hotmart. O plano novo vem em `data.plans[]` com
+// `current: true` e o payload NÃO traz `data.product`. Só a troca para um
+// plano VIP (pelo mapa de planos) de quem tem LITE no bot faz migração; o
+// resto é registrado para revisão e não muda nada.
+const SWITCH_PLAN_EVENTS = new Set([
+  'switch_plan',
+  'switch.plan'
+]);
+
+// Eventos que o bot responde 202 e apenas registra. A mudança de dia de
+// cobrança não altera acesso nenhum — e, como chega com
+// `subscription.status = ACTIVE`, antes deste PR ela ATIVAVA pelo status.
+const IGNORED_EVENTS = new Set([
+  'update_subscription_charge_date',
+  'update.subscription.charge.date'
+]);
+
+// ⚠️ NÃO é mais usado para decidir ativação. A ativação acontece só por evento
+// explícito (ACTIVATION_EVENTS). O status ficou aqui apenas como referência
+// histórica: `SWITCH_PLAN` e `UPDATE_SUBSCRIPTION_CHARGE_DATE` chegam com
+// `subscription.status = ACTIVE`, e uma assinatura reembolsada que a Hotmart
+// continua mostrando como ACTIVE era reativada por eles.
 const ACTIVATION_STATUSES = new Set([
   'approved',
   'completed',
@@ -130,6 +166,20 @@ const DEACTIVATION_STATUSES = new Set([
   'inactive',
   'unpaid'
 ]);
+
+// Único uso do status para DECIDIR: atraso de pagamento (regra 3 do Davi —
+// corta no dia seguinte à data em que a renovação deveria ter sido paga, sem
+// tolerância). A lista é deliberadamente curta.
+//
+// Por que é seguro: este fallback só roda depois de IGNORED_EVENTS,
+// CANCELLATION_EVENTS, SWITCH_PLAN_EVENTS, ACTIVATION_EVENTS e
+// DEACTIVATION_EVENTS, ou seja, só para evento desconhecido/ausente. Os dois
+// eventos que chegam com status ACTIVE (`SWITCH_PLAN` e
+// `UPDATE_SUBSCRIPTION_CHARGE_DATE`) têm tratamento próprio antes daqui, e
+// `delayed`/`overdue` não aparecem neles. O cancelamento de renovação chega
+// com status de cancelamento, que NÃO está nesta lista — por isso ele deixa de
+// cortar na hora mesmo quando o evento vem sem nome reconhecido.
+const DEACTIVATION_STATUS_FALLBACK = new Set(['delayed', 'overdue']);
 
 function normalizeString(value) {
   if (value === undefined || value === null) {
@@ -177,18 +227,140 @@ const MIGRATION_KEYWORDS = (() => {
   return [...new Set(source)];
 })();
 
-// Detecta se o evento representa uma migração LITE -> VIP.
-// A migração acontece "dentro" do plano LITE: o produto/plano continua sendo
-// LITE, mas a OFERTA usada carrega um nome de migração/upgrade. Por isso só
-// tratamos como migração quando (1) o plano base resolvido é LITE e (2) o nome
-// da oferta (ou do plano) casa com alguma palavra-chave de migração.
-function resolveMigration(subscriberData = {}, basePlan = null) {
-  const baseKey = normalizeMatchKey(basePlan);
-  const baseIsLite =
-    !!baseKey &&
-    (baseKey.includes('lite') || baseKey === normalizeMatchKey(MIGRATION_SOURCE_PLAN));
+// ─── Mapa por PLANO da Hotmart ────────────────────────────────────────────
+//
+// Cada produto da Hotmart tem vários PLANOS, e alguns produtos LITE vendem
+// planos VIP dentro (planos de migração antigos e a troca de plano nativa da
+// Hotmart, que só funciona dentro do mesmo produto). Decidir pelo NOME da
+// oferta erra nesses casos; o id do plano não erra.
+//
+// Esta é a lista confirmada pelo Davi um por um, a mesma de
+// `HOTMART_PLAN_EXCEPTIONS` no portal (src/lib/hotmart-product-map.ts).
+// Chave: `plan.id` do payload. O produto entre parênteses é só para leitura —
+// a decisão é pelo plano, qualquer que seja o produto.
+const BUILTIN_PLAN_ID_MAPPING = new Map([
+  // Produto 1874171 (LITE)
+  ['830231', MIGRATION_TARGET_PLAN], // Migração - Close Friends VIP 997
+  ['494607', MIGRATION_TARGET_PLAN], // Close Friends VIP - 2023
+  ['773294', MIGRATION_TARGET_PLAN], // Migração - Close Friends VIP
 
-  if (!baseIsLite) {
+  // Produto 3129181 (LITE)
+  ['810167', MIGRATION_TARGET_PLAN], // Migração - Close Friends VIP
+  ['699092', MIGRATION_SOURCE_PLAN], // Migração - Renda Passiva (LITE_V2)
+
+  // Produto 3671256 (LITE)
+  ['853270', MIGRATION_TARGET_PLAN], // Migração - Close Friends VIP 997
+  ['773559', MIGRATION_TARGET_PLAN], // Migração - Close Friends VIP
+  ['706794', MIGRATION_TARGET_PLAN], // Close Friends VIP
+
+  // Produto 5060609 (LITE)
+  ['1263167', MIGRATION_TARGET_PLAN], // Close Friends VIP
+  ['1063182', MIGRATION_TARGET_PLAN], // Close Friends VIP - Migração
+  ['1381590', MIGRATION_TARGET_PLAN], // Migração Plano VIP
+
+  // Produto 3547657 (Projeto Renda Passiva)
+  ['853268', MIGRATION_TARGET_PLAN], // Migração - Plano VIP 997
+  ['687186', MIGRATION_SOURCE_PLAN] // Migração - Close Friends LITE (LITE_V2)
+]);
+
+// Plano do bot para um `plan.id` da Hotmart, ou null quando o plano não tem
+// exceção. Só consulta o mapa por PLANO — nunca o mapa por produto — para que
+// um id de plano não case por acidente com um id de produto.
+function resolvePlanFromPlanId(planId, mapping = {}) {
+  const key = normalizeString(planId).toLowerCase();
+
+  if (!key) {
+    return null;
+  }
+
+  // Uma entrada explícita do HOTMART_PLAN_MAP para este id de plano ganha da
+  // lista interna, para o Davi poder corrigir em produção sem deploy.
+  if (mapping && mapping[key]) {
+    return mapping[key];
+  }
+
+  return BUILTIN_PLAN_ID_MAPPING.get(key) || null;
+}
+
+function isLitePlan(plan) {
+  const key = normalizeMatchKey(plan);
+  return !!key && (key.includes('lite') || key === normalizeMatchKey(MIGRATION_SOURCE_PLAN));
+}
+
+// Quebra "Plano A, Plano B" em lista de planos, como o banco guarda.
+function splitPlanList(plan) {
+  if (Array.isArray(plan)) {
+    return [...new Set(plan.map((item) => normalizeString(item)).filter(Boolean))];
+  }
+
+  return [
+    ...new Set(
+      normalizeString(plan)
+        .split(/[,;\n]/)
+        .map((item) => item.trim())
+        .filter(Boolean)
+    )
+  ];
+}
+
+// Planos LITE presentes numa lista de planos (os valores exatos gravados no
+// banco, para poder removê-los na migração).
+function findLitePlans(plan) {
+  return splitPlanList(plan).filter((item) => isLitePlan(item));
+}
+
+function migrationResult(source, removePlans = [MIGRATION_SOURCE_PLAN]) {
+  return {
+    isMigration: true,
+    source,
+    sourcePlan: MIGRATION_SOURCE_PLAN,
+    targetPlan: MIGRATION_TARGET_PLAN,
+    removePlans
+  };
+}
+
+// Migração detectada pelo ID DO PLANO: o plano vendido é VIP pelo mapa, mas o
+// PRODUTO é LITE. É o caso dos planos VIP vendidos dentro de produtos LITE
+// (tabela confirmada pelo Davi). Vale tanto para `PURCHASE_APPROVED` desses
+// planos quanto para a troca de plano.
+//
+// Um plano VIP dentro de um produto que NÃO é LITE (ex.: plano 853268 no
+// produto 3547657, Projeto Renda Passiva) resolve para VIP pelo mapa de
+// planos, mas não remove nada: só a migração LITE -> VIP substitui plano.
+function resolvePlanIdMigration(subscriberData = {}, mapping = {}) {
+  const planFromPlanId =
+    resolvePlanFromPlanId(subscriberData.planId, mapping) ||
+    resolvePlanFromPlanId(subscriberData.currentPlanId, mapping);
+
+  if (normalizeMatchKey(planFromPlanId) !== normalizeMatchKey(MIGRATION_TARGET_PLAN)) {
+    return null;
+  }
+
+  const productKey = normalizeString(subscriberData.productId).toLowerCase();
+  const productPlan = productKey ? BUILTIN_PLAN_MAPPING.get(productKey) : null;
+
+  if (!isLitePlan(productPlan)) {
+    return null;
+  }
+
+  return migrationResult('plan_id');
+}
+
+// Detecta se o evento representa uma migração LITE -> VIP.
+//
+// Duas formas, nesta ordem:
+//   1. pelo ID do plano (`resolvePlanIdMigration`) — a regra confirmada;
+//   2. pelo NOME da oferta — RESERVA, para payloads sem `plan.id`. A migração
+//      acontece "dentro" do plano LITE: o produto continua LITE, mas a OFERTA
+//      carrega um nome de migração/upgrade.
+function resolveMigration(subscriberData = {}, basePlan = null, mapping = {}) {
+  const byPlanId = resolvePlanIdMigration(subscriberData, mapping);
+
+  if (byPlanId) {
+    return byPlanId;
+  }
+
+  if (!isLitePlan(basePlan)) {
     return { isMigration: false };
   }
 
@@ -204,12 +376,7 @@ function resolveMigration(subscriberData = {}, basePlan = null) {
     return { isMigration: false };
   }
 
-  return {
-    isMigration: true,
-    sourcePlan: MIGRATION_SOURCE_PLAN,
-    targetPlan: MIGRATION_TARGET_PLAN,
-    removePlans: [MIGRATION_SOURCE_PLAN]
-  };
+  return migrationResult('offer_name');
 }
 
 function verifyHotmartSignature(rawBody, signature, secret) {
@@ -320,6 +487,20 @@ function extractPhone(source = {}) {
   return '';
 }
 
+// Lista de planos da troca nativa (`SWITCH_PLAN`): `data.plans[]` ou
+// `data.subscription.plans[]`. O plano novo é o que tem `current: true`.
+function extractPlans(data = {}) {
+  const candidates = [data.plans, data.subscription?.plans];
+
+  for (const candidate of candidates) {
+    if (Array.isArray(candidate) && candidate.length > 0) {
+      return candidate;
+    }
+  }
+
+  return [];
+}
+
 function extractSubscriberData(payload = {}) {
   const data = payload.data || payload;
   const purchase = data.purchase || {};
@@ -327,6 +508,8 @@ function extractSubscriberData(payload = {}) {
   const buyer = data.buyer || data.customer || {};
   const offer = data.offer || {};
   const product = data.product || {};
+  const plans = extractPlans(data);
+  const currentPlan = plans.find((item) => item && item.current === true) || null;
 
   const contact = subscriber.email ? subscriber : buyer;
 
@@ -375,6 +558,10 @@ function extractSubscriberData(payload = {}) {
     .map((value) => normalizeString(value))
     .find((value) => value) || '';
 
+  // `plan.id` da Hotmart. Mesmos caminhos que o portal usa
+  // (src/lib/hotmart-payload-paths.ts: `planId`).
+  const planId = normalizeString(data.subscription?.plan?.id || data.plan?.id);
+
   return {
     email,
     name,
@@ -384,7 +571,11 @@ function extractSubscriberData(payload = {}) {
     offerName,
     productId,
     productName,
-    planName
+    planName,
+    planId,
+    plans,
+    currentPlanId: normalizeString(currentPlan?.id),
+    currentPlanName: normalizeString(currentPlan?.name)
   };
 }
 
@@ -449,6 +640,17 @@ function resolvePlanFromMapping(mappingInput, subscriberData = {}, defaultPlan =
 
     return null;
   };
+
+  // 1º o mapa por PLANO: um plano VIP vendido dentro de um produto LITE tem de
+  // resolver para VIP, e isso só o id do plano diz. Vem antes do mapa por
+  // oferta/produto de propósito.
+  const planFromPlanId =
+    resolvePlanFromPlanId(subscriberData.planId, mapping) ||
+    resolvePlanFromPlanId(subscriberData.currentPlanId, mapping);
+
+  if (planFromPlanId) {
+    return planFromPlanId;
+  }
 
   const offerKeys = [subscriberData.offerCode, subscriberData.offerId];
 
@@ -521,20 +723,178 @@ function getStatusFromPayload(payload = {}) {
   return '';
 }
 
+// ─── Datas ────────────────────────────────────────────────────────────────
+
+// Abaixo disso, um epoch numérico está em segundos (1e11 s é o ano 5138;
+// 1e11 ms é 1973, antes de qualquer evento da Hotmart).
+const EPOCH_SECONDS_LIMIT = 1e11;
+
+// Datas da Hotmart chegam em epoch ms (número ou string de dígitos) ou ISO.
+// Epoch em segundos também é aceito. Mesma regra do portal
+// (parseHotmartTimestamp em src/lib/hotmart-webhook-events.ts).
+function parseHotmartTimestamp(value) {
+  if (value === null || value === undefined || value === '') {
+    return null;
+  }
+
+  if (typeof value !== 'number' && typeof value !== 'string') {
+    return null;
+  }
+
+  const asNumber =
+    typeof value === 'number'
+      ? value
+      : /^\d+$/.test(value.trim())
+        ? Number(value.trim())
+        : null;
+
+  const parsed =
+    asNumber !== null
+      ? new Date(asNumber < EPOCH_SECONDS_LIMIT ? asNumber * 1000 : asNumber)
+      : new Date(String(value));
+
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+// Data da próxima cobrança. No CANCELAMENTO o caminho real é
+// `data.date_next_charge` — confirmado no mapa de caminhos do portal
+// (src/lib/hotmart-payload-paths.ts, campo `nextCharge`, comentado
+// "cancelamento"). Os outros caminhos entram como reserva: `data.purchase.*`
+// é o da compra (confirmado nos logs de produção do portal) e
+// `data.subscription.*` o do evento de dia de cobrança.
+//
+// Devolve também QUAL caminho casou, para o log dizer de onde veio a data.
+const NEXT_CHARGE_PATHS = [
+  'data.date_next_charge',
+  'data.purchase.date_next_charge',
+  'data.subscription.date_next_charge'
+];
+
+function readPath(root, path) {
+  let current = root;
+
+  for (const key of path.split('.')) {
+    if (!current || typeof current !== 'object' || Array.isArray(current)) {
+      return undefined;
+    }
+
+    current = current[key];
+  }
+
+  return current;
+}
+
+function extractNextChargeDate(payload = {}) {
+  for (const path of NEXT_CHARGE_PATHS) {
+    const raw = readPath(payload, path);
+    const parsed = parseHotmartTimestamp(raw);
+
+    if (parsed) {
+      return { date: parsed, path, raw };
+    }
+  }
+
+  return { date: null, path: null, raw: null };
+}
+
+// ─── Hottok ───────────────────────────────────────────────────────────────
+
+function sha256(value) {
+  return crypto.createHash('sha256').update(value).digest();
+}
+
+// Compara o hottok em tempo constante. Usa o SHA-256 dos dois lados para o
+// tempo não depender do conteúdo NEM do tamanho — mesma ideia de
+// `timingSafeSecretMatches` (web/internal-routes.js) e de `computeHottokMatch`
+// no portal. Antes deste PR a comparação era `!==`.
+function timingSafeHottokMatches(providedHottok, expectedHottok) {
+  const provided = normalizeString(providedHottok);
+  const expected = normalizeString(expectedHottok);
+
+  if (!provided || !expected) {
+    return false;
+  }
+
+  return crypto.timingSafeEqual(sha256(provided), sha256(expected));
+}
+
+// ─── Decisão do evento ────────────────────────────────────────────────────
+
+// O que fazer com um payload. A ORDEM é a regra:
+//
+//   1. IGNORED_EVENTS        -> 202, só registra
+//   2. CANCELLATION_EVENTS   -> agenda o fim do acesso (não corta)
+//   3. SWITCH_PLAN_EVENTS    -> migração LITE->VIP ou revisão
+//   4. ACTIVATION_EVENTS     -> ativa
+//   5. DEACTIVATION_EVENTS   -> corta na hora (reembolso, chargeback, disputa)
+//   6. status delayed/overdue -> corta na hora (regra 3)
+//
+// O status NUNCA ativa: a ativação só acontece por evento explícito.
+function decideHotmartAction(payload = {}) {
+  const eventType = getEventType(payload);
+  const status = getStatusFromPayload(payload);
+  const base = { eventType, status };
+
+  if (eventType && IGNORED_EVENTS.has(eventType)) {
+    return { ...base, action: null, ignored: true, reason: 'event_ignored' };
+  }
+
+  if (eventType && CANCELLATION_EVENTS.has(eventType)) {
+    return { ...base, action: 'cancellation', actionSource: 'event' };
+  }
+
+  if (eventType && SWITCH_PLAN_EVENTS.has(eventType)) {
+    return { ...base, action: 'switch_plan', actionSource: 'event' };
+  }
+
+  if (eventType && ACTIVATION_EVENTS.has(eventType)) {
+    return { ...base, action: 'activation', actionSource: 'event' };
+  }
+
+  if (eventType && DEACTIVATION_EVENTS.has(eventType)) {
+    return { ...base, action: 'deactivation', actionSource: 'event' };
+  }
+
+  if (status && DEACTIVATION_STATUS_FALLBACK.has(status)) {
+    return { ...base, action: 'deactivation', actionSource: 'status' };
+  }
+
+  return {
+    ...base,
+    action: null,
+    ignored: true,
+    reason: eventType ? 'event_unknown' : 'event_missing'
+  };
+}
+
 module.exports = {
   ACTIVATION_EVENTS,
   DEACTIVATION_EVENTS,
+  CANCELLATION_EVENTS,
+  SWITCH_PLAN_EVENTS,
+  IGNORED_EVENTS,
   ACTIVATION_STATUSES,
   DEACTIVATION_STATUSES,
+  DEACTIVATION_STATUS_FALLBACK,
+  decideHotmartAction,
   verifyHotmartSignature,
+  timingSafeHottokMatches,
+  parseHotmartTimestamp,
+  extractNextChargeDate,
   extractSubscriberData,
   resolvePlanFromMapping,
+  resolvePlanFromPlanId,
   resolveMigration,
+  resolvePlanIdMigration,
+  isLitePlan,
+  splitPlanList,
+  findLitePlans,
   normalizePlanMapping,
   normalizeMatchKey,
   getEventType,
   getStatusFromPayload,
   MIGRATION_SOURCE_PLAN,
   MIGRATION_TARGET_PLAN,
-  MIGRATION_KEYWORDS
+  MIGRATION_KEYWORDS,
+  BUILTIN_PLAN_ID_MAPPING
 };
