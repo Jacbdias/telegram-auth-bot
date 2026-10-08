@@ -78,6 +78,13 @@ const DEACTIVATION_EVENTS = new Set([
   'purchase_protest',
   'purchase.dispute',
   'purchase_dispute',
+  // Atraso de pagamento (regra 3 do Davi: corta no dia seguinte à data em que
+  // a renovação deveria ter sido paga, sem tolerância). Como EVENTO explícito,
+  // não depende do fallback por status — o payload de `PURCHASE_DELAYED` pode
+  // chegar sem `status` algum. Corta só o plano daquela assinatura, e uma
+  // `PURCHASE_APPROVED` posterior da mesma assinatura devolve o plano.
+  'purchase.delayed',
+  'purchase_delayed',
   'subscription.deactivated',
   'subscription_deactivated',
   'subscription.expired',
@@ -167,9 +174,12 @@ const DEACTIVATION_STATUSES = new Set([
   'unpaid'
 ]);
 
-// Único uso do status para DECIDIR: atraso de pagamento (regra 3 do Davi —
-// corta no dia seguinte à data em que a renovação deveria ter sido paga, sem
-// tolerância). A lista é deliberadamente curta.
+// Único uso do status para DECIDIR: atraso de pagamento (regra 3 do Davi). A
+// lista é deliberadamente curta.
+//
+// O atraso já tem evento próprio em DEACTIVATION_EVENTS
+// (`PURCHASE_DELAYED`), que é o caminho normal. Isto aqui é a RESERVA, para o
+// payload que chega com o status mas sem um evento reconhecido.
 //
 // Por que é seguro: este fallback só roda depois de IGNORED_EVENTS,
 // CANCELLATION_EVENTS, SWITCH_PLAN_EVENTS, ACTIVATION_EVENTS e

@@ -212,6 +212,22 @@ test('listas de eventos incluem ativações e cancelamentos esperados', () => {
   assert.equal(DEACTIVATION_EVENTS.has('purchase.chargeback'), true);
   assert.equal(DEACTIVATION_EVENTS.has('purchase.protest'), true);
   assert.equal(DEACTIVATION_EVENTS.has('subscription.expired'), true);
+
+  // O atraso tem evento explícito, nas duas grafias.
+  assert.equal(DEACTIVATION_EVENTS.has('purchase.delayed'), true);
+  assert.equal(DEACTIVATION_EVENTS.has('purchase_delayed'), true);
+});
+
+test('PURCHASE_DELAYED decide pelo evento, sem precisar do status', () => {
+  for (const event of ['PURCHASE_DELAYED', 'purchase.delayed']) {
+    // Payload sem status algum.
+    const decision = decideHotmartAction({ event, data: { product: { id: '5060609' } } });
+
+    assert.equal(decision.status, '', `${event} não deveria ter status`);
+    assert.equal(decision.action, 'deactivation');
+    // Pelo EVENTO, não pelo fallback por status.
+    assert.equal(decision.actionSource, 'event');
+  }
 });
 
 test('getEventType normaliza diferentes formatos de evento', () => {

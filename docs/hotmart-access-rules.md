@@ -10,7 +10,7 @@ mapas estão em `web/hotmart-utils.js`.
 | --- | --- | --- |
 | 1 | **Renovação cancelada** | Acesso **até o fim do período já pago**. Não corta na hora. |
 | 2 | **Reembolso, chargeback e disputa** | Cortam na hora. |
-| 3 | **Atraso** | Corta quando chega o status `delayed`/`overdue`, sem tolerância. |
+| 3 | **Atraso** | Corta ao receber `PURCHASE_DELAYED` (ou o status `delayed`/`overdue`), sem tolerância. Corta só o plano daquela assinatura; uma `PURCHASE_APPROVED` posterior devolve o plano. |
 | 4 | **Rebaixamento** | Só por compra nova. Troca de plano para baixo **não** rebaixa. |
 
 ## 1. Cancelamento de renovação: acesso até o fim do período pago
@@ -62,8 +62,11 @@ podia **reativar uma assinatura reembolsada** que a Hotmart continua mostrando
 como ACTIVE (caso real, confirmado no painel).
 
 Para **desativar**, o status ainda decide, mas só em `delayed` e `overdue`
-(`DEACTIVATION_STATUS_FALLBACK`). É seguro porque esse fallback só roda para
-evento desconhecido ou ausente — todos os eventos conhecidos são tratados antes:
+(`DEACTIVATION_STATUS_FALLBACK`), e só como **reserva**: o atraso tem evento
+próprio (`PURCHASE_DELAYED`, nas duas grafias) em `DEACTIVATION_EVENTS`, que é
+o caminho normal e funciona mesmo quando o payload chega **sem status algum**.
+O fallback é seguro porque só roda para evento desconhecido ou ausente — todos
+os eventos conhecidos são tratados antes:
 
 | Evento | Tratamento | Status é usado? |
 | --- | --- | --- |
@@ -72,6 +75,7 @@ evento desconhecido ou ausente — todos os eventos conhecidos são tratados ant
 | `SWITCH_PLAN` | migração ou revisão | não |
 | `PURCHASE_APPROVED` e cia. | ativa | não |
 | `PURCHASE_REFUNDED`/`CHARGEBACK`/`PROTEST` | corta na hora | não |
+| `PURCHASE_DELAYED` | corta na hora | não |
 | desconhecido / ausente | corta **se** `delayed`/`overdue` | sim |
 
 Um status de cancelamento (`canceled`, `cancelled`) num evento desconhecido

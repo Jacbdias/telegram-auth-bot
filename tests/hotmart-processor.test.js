@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const { createHotmartProcessor } = require('../web/hotmart-processor');
+const { getStatusFromPayload } = require('../web/hotmart-utils');
 const { runPlanAccessExpiryJob } = require('../web/plan-access-job');
 const {
   createFakeDb,
@@ -109,6 +110,22 @@ function updateChargeDate({ email }) {
       old_charge_day: 5,
       new_charge_day: 15,
       date_next_charge: PROXIMA_COBRANCA_MS
+    }
+  };
+}
+
+// Atraso de pagamento. De propósito SEM `status` em lugar nenhum do payload:
+// quem decide é o EVENTO, não o fallback por status.
+function purchaseDelayed({ email, productId = PRODUTO_LITE } = {}) {
+  return {
+    id: 'evt-delayed',
+    event: 'PURCHASE_DELAYED',
+    version: '2.0.0',
+    data: {
+      product: { id: productId, name: LITE },
+      buyer: { email, name: 'Cliente Teste' },
+      purchase: { transaction: 'HP-1', offer: { code: 'of-1' } },
+      subscription: { subscriber: { code: 'SUB1', email } }
     }
   };
 }
@@ -327,6 +344,70 @@ for (const event of ['PURCHASE_REFUNDED', 'PURCHASE_CHARGEBACK', 'PURCHASE_PROTE
     assert.equal(db.state.planAccess.length, 0);
   });
 }
+
+test('PURCHASE_DELAYED corta o plano mesmo sem status no payload', async () => {
+  const email = 'atrasou-evento@email.com';
+  const db = createFakeDb({ subscribers: [{ email, plan: `${LITE}, ${MENTORIA}` }] });
+  const { processHotmartEvent } = makeProcessor(db);
+
+  const payload = purchaseDelayed({ email });
+  // Garantia do que o teste está afirmando: o payload não tem status algum.
+  assert.equal(getStatusFromPayload(payload), '');
+
+  const result = await processHotmartEvent(payload);
+
+  // Decidiu pelo EVENTO, não pelo fallback por status.
+  assert.equal(result.action, 'deactivated');
+  assert.equal(result.plan, LITE);
+
+  // Cortou só o plano daquela assinatura.
+  assert.equal(db.state.revocations.length, 1);
+  assert.equal(db.state.revocations[0].revokedPlans, LITE);
+  assert.equal(db.state.revocations[0].full, false);
+  assert.equal(db.state.subscribers[0].plan, MENTORIA);
+  assert.equal(db.state.subscribers[0].status, 'active');
+});
+
+test('PURCHASE_APPROVED depois de PURCHASE_DELAYED devolve o plano', async () => {
+  const email = 'atrasou-e-pagou@email.com';
+  const db = createFakeDb({ subscribers: [{ email, plan: `${LITE}, ${MENTORIA}` }] });
+  const { processHotmartEvent } = makeProcessor(db);
+
+  await processHotmartEvent(purchaseDelayed({ email }));
+  assert.equal(db.state.subscribers[0].plan, MENTORIA);
+
+  const result = await processHotmartEvent(purchaseApproved({ email }));
+
+  assert.equal(result.action, 'activated');
+  assert.equal(result.plan, LITE);
+  assert.equal(result.migration, false);
+
+  // O plano voltou e o outro continua.
+  assert.equal(db.state.subscribers[0].plan, `${MENTORIA}, ${LITE}`);
+  assert.equal(db.state.subscribers[0].status, 'active');
+});
+
+test('PURCHASE_DELAYED do plano VIP corta só o VIP e devolve com a aprovação', async () => {
+  const email = 'atrasou-vip@email.com';
+  const db = createFakeDb({ subscribers: [{ email, plan: `${VIP3}, ${MENTORIA}` }] });
+  const { processHotmartEvent } = makeProcessor(db);
+
+  // Plano VIP vendido dentro do produto LITE: o id do plano é que manda.
+  const atraso = purchaseDelayed({ email });
+  atraso.data.subscription.plan = { id: PLANO_VIP_NO_LITE, name: 'Close Friends VIP' };
+
+  const result = await processHotmartEvent(atraso);
+
+  assert.equal(result.action, 'deactivated');
+  assert.equal(result.plan, VIP3);
+  assert.equal(db.state.subscribers[0].plan, MENTORIA);
+
+  // A aprovação seguinte do mesmo plano devolve o VIP.
+  await processHotmartEvent(
+    purchaseApproved({ email, productId: PRODUTO_LITE, planId: PLANO_VIP_NO_LITE })
+  );
+  assert.equal(db.state.subscribers[0].plan, `${MENTORIA}, ${VIP3}`);
+});
 
 test('atraso (status delayed/overdue) continua cortando na hora', async () => {
   for (const status of ['DELAYED', 'OVERDUE']) {
