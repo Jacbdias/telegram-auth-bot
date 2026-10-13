@@ -7,6 +7,7 @@ const alerts = require('../shared/alerts');
 const metrics = require('../shared/metrics-collector');
 const { withRetry, sleep } = require('../shared/retry');
 const { decideJoinRequest } = require('./join-request-policy');
+const { createAtendimento } = require('./atendimento');
 
 const token = process.env.TELEGRAM_BOT_TOKEN;
 const rawWebAppUrl = process.env.WEB_APP_URL;
@@ -268,25 +269,10 @@ async function generateInviteLinksForUser(telegramId, channels) {
 // Armazena tokens temporários (em produção, use Redis)
 const verificationTokens = new Map();
 
-// Comando /start
-bot.onText(/\/start/, async (msg) => {
-  const chatId = msg.chat.id;
-  const username = msg.from.username || msg.from.first_name;
-
-  // Verifica se usuário já está autorizado
-  const user = await getCachedUserByTelegramId(chatId);
-
-  if (user && user.authorized) {
-    return await safeSendMessage(chatId,
-      `✅ Olá <b>${esc(username)}</b>!\n\n` +
-      `Você já está autorizado e tem acesso aos canais.\n\n` +
-      `Digite /meuscanais para ver seus acessos.`,
-      { parse_mode: 'HTML' },
-      1,
-      'welcome_info'
-    );
-  }
-
+// Mensagem de verificação que o /start mostra para quem ainda não se
+// identificou. O atendimento reaproveita esta função quando o portal responde
+// acao: "verificar" — o texto e o botão continuam sendo os mesmos.
+async function sendVerificationPrompt(chatId, username) {
   const welcomeMessage =
     `Olá <b>${esc(username)}</b>! 👋\n\n` +
     `Para entrar nos nossos canais exclusivos para assinantes, ` +
@@ -299,14 +285,46 @@ bot.onText(/\/start/, async (msg) => {
       {
         text: '🔐 Verificar Identidade',
         callback_data: 'verify_identity'
-      }
+      },
+      // Vazio quando ATENDIMENTO_ENABLED está desligada: o teclado sai
+      // exatamente igual ao de antes do atendimento existir.
+      ...atendimento.startButtons()
     ]]
   };
 
-  await safeSendMessage(chatId, welcomeMessage, {
+  return await safeSendMessage(chatId, welcomeMessage, {
     parse_mode: 'HTML',
     reply_markup: keyboard
   });
+}
+
+// Comando /start
+bot.onText(/\/start/, async (msg) => {
+  const chatId = msg.chat.id;
+  const username = msg.from.username || msg.from.first_name;
+
+  // Verifica se usuário já está autorizado
+  const user = await getCachedUserByTelegramId(chatId);
+
+  if (user && user.authorized) {
+    const options = { parse_mode: 'HTML' };
+    const atendimentoKeyboard = atendimento.startKeyboard();
+
+    if (atendimentoKeyboard) {
+      options.reply_markup = atendimentoKeyboard;
+    }
+
+    return await safeSendMessage(chatId,
+      `✅ Olá <b>${esc(username)}</b>!\n\n` +
+      `Você já está autorizado e tem acesso aos canais.\n\n` +
+      `Digite /meuscanais para ver seus acessos.`,
+      options,
+      1,
+      'welcome_info'
+    );
+  }
+
+  await sendVerificationPrompt(chatId, username);
 });
 
 // Callback quando usuário clica em "Verificar Identidade"
@@ -353,9 +371,9 @@ bot.on('callback_query', async (query) => {
   }
 });
 
-// Comando /meuscanais
-bot.onText(/\/meuscanais/, async (msg) => {
-  const chatId = msg.chat.id;
+// Lógica do /meuscanais. Virou função para o atendimento chamar a mesma coisa
+// quando o portal responde acao: "meuscanais", sem duplicar código.
+async function sendUserChannels(chatId) {
   const user = await getCachedUserByTelegramId(chatId);
 
   if (!user || !user.authorized) {
@@ -387,7 +405,46 @@ bot.onText(/\/meuscanais/, async (msg) => {
   } catch (error) {
     console.error('Erro ao enviar canais do usuário:', error.message);
   }
+}
+
+// Comando /meuscanais
+bot.onText(/\/meuscanais/, async (msg) => {
+  await sendUserChannels(msg.chat.id);
 });
+
+// Atendimento automático: handlers isolados em bot/atendimento.js. Com
+// ATENDIMENTO_ENABLED desligada nada é registrado e o bot segue como hoje.
+const atendimento = createAtendimento({
+  bot,
+  safeSendMessage,
+  getUser: getCachedUserByTelegramId,
+  sendUserChannels,
+  sendVerificationPrompt
+});
+
+function runAtendimentoHandler(promise, context) {
+  Promise.resolve(promise).catch((error) => {
+    logger.error('atendimento_handler_error', { context, error: error?.message });
+  });
+}
+
+if (atendimento.enabled) {
+  bot.onText(/\/atendimento/, (msg) => {
+    runAtendimentoHandler(atendimento.handleCommand(msg), 'command');
+  });
+
+  bot.on('message', (msg) => {
+    runAtendimentoHandler(atendimento.handleMessage(msg), 'message');
+  });
+
+  bot.on('callback_query', (query) => {
+    runAtendimentoHandler(atendimento.handleCallbackQuery(query), 'callback_query');
+  });
+
+  console.log('💬 Atendimento automático habilitado.');
+} else {
+  console.log('💬 Atendimento automático desabilitado (ATENDIMENTO_ENABLED).');
+}
 
 // Aprova na hora quem entra por link com creates_join_request e já está
 // autorizado. Sem este handler os pedidos ficavam parados esperando aprovação
@@ -720,10 +777,12 @@ bot.onText(/\/sync/, async (msg) => {
 function stopBotIntervals() {
   clearInterval(cleanTokensInterval);
   clearInterval(cacheStatsInterval);
+  atendimento.stop();
 }
 
 module.exports = {
   bot,
+  atendimento,
   validateToken,
   consumeToken,
   notifyUserAuthorized,
