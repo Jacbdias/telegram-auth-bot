@@ -298,6 +298,10 @@ async function sendVerificationPrompt(chatId, username) {
   });
 }
 
+// Botão "Meus canais" da mensagem de boas-vindas de quem já está autorizado.
+const MEUS_CANAIS_CALLBACK = 'meus_canais';
+const MEUS_CANAIS_BUTTON_TEXT = '📋 Meus canais';
+
 // Comando /start
 bot.onText(/\/start/, async (msg) => {
   const chatId = msg.chat.id;
@@ -307,17 +311,21 @@ bot.onText(/\/start/, async (msg) => {
   const user = await getCachedUserByTelegramId(chatId);
 
   if (user && user.authorized) {
-    const options = { parse_mode: 'HTML' };
-    const atendimentoKeyboard = atendimento.startKeyboard();
-
-    if (atendimentoKeyboard) {
-      options.reply_markup = atendimentoKeyboard;
-    }
+    // "Meus canais" sempre aparece; "Atendimento" só com ATENDIMENTO_ENABLED.
+    const options = {
+      parse_mode: 'HTML',
+      reply_markup: {
+        inline_keyboard: [[
+          { text: MEUS_CANAIS_BUTTON_TEXT, callback_data: MEUS_CANAIS_CALLBACK },
+          ...atendimento.startButtons()
+        ]]
+      }
+    };
 
     return await safeSendMessage(chatId,
       `✅ Olá <b>${esc(username)}</b>!\n\n` +
       `Você já está autorizado e tem acesso aos canais.\n\n` +
-      `Digite /meuscanais para ver seus acessos.`,
+      `Toque em <b>Meus canais</b> ou digite /meuscanais para ver seus acessos.`,
       options,
       1,
       'welcome_info'
@@ -368,6 +376,17 @@ bot.on('callback_query', async (query) => {
 
     await safeSendMessage(chatId, message);
     await bot.answerCallbackQuery(query.id);
+    return;
+  }
+
+  // Mesmo caminho do /meuscanais: a função confere a autorização de novo.
+  if (data === MEUS_CANAIS_CALLBACK) {
+    try {
+      await bot.answerCallbackQuery(query.id);
+    } catch (error) {
+      console.error('Erro ao responder o botão Meus canais:', error.message);
+    }
+    await sendUserChannels(chatId);
   }
 });
 
