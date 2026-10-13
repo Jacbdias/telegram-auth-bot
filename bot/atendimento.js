@@ -1,16 +1,23 @@
 // Atendimento automático do Fatos da Bolsa dentro do bot do Telegram.
 //
-// O bot continua sendo o único que fala com o Telegram: este módulo só leva a
-// mensagem até a rota do portal (POST /api/telegram/atendimento) e devolve a
-// resposta pronta. Tudo aqui é isolado de propósito — verificação de
-// identidade, /meuscanais, chat_join_request, comandos de admin e webhook da
-// Hotmart não passam por este arquivo.
+// O bot continua sendo o único que recebe as mensagens do Telegram: este
+// módulo só leva a mensagem até a rota do portal
+// (POST /api/telegram/atendimento) e entrega o que vier de volta. Quando a
+// pessoa está falando com um atendente, o portal grava a mensagem, responde
+// sem conteúdo e manda a resposta do atendente direto pela Bot API — por isso
+// `mensagens: []` é o caso normal e não gera envio nenhum.
+//
+// Tudo aqui é isolado de propósito — verificação de identidade, /meuscanais,
+// chat_join_request, comandos de admin e webhook da Hotmart não passam por
+// este arquivo.
 //
 // Regras que não podem ser quebradas:
 // • ATENDIMENTO_ENABLED desligada ou ausente => nada é registrado e o bot se
 //   comporta exatamente como antes deste arquivo existir.
 // • Só responde em conversa privada.
 // • Toda chamada ao portal tem timeout, fica em try/catch e nunca relança erro.
+// • Nenhuma mensagem de texto é descartada: as da mesma pessoa entram numa
+//   fila e vão ao portal uma depois da outra, na ordem em que chegaram.
 const crypto = require('crypto');
 const http = require('http');
 const https = require('https');
@@ -24,15 +31,48 @@ const CALLBACK_PREFIX = 'atd:';
 const MENU_OPCAO_ID = 'menu';
 const REQUEST_TIMEOUT_MS = 8000;
 const STATE_TTL_MS = 30 * 60 * 1000;
+// Estado "humano" é a pista de que existe conversa aberta com um atendente.
+// O portal é quem decide; aqui o prazo é longo só para a pista não sumir no
+// meio do atendimento.
+const HUMAN_STATE = 'humano';
+const HUMAN_STATE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const STATE_CLEANUP_INTERVAL_MS = 5 * 60 * 1000;
-const MIN_CALL_INTERVAL_MS = 2000;
+// Rede de segurança: ninguém mantém mais de 20 mensagens esperando.
+const MAX_QUEUED_MESSAGES = 20;
 const MAX_RESPONSE_BYTES = 256 * 1024;
 const MAX_CALLBACK_DATA_BYTES = 64;
+
+const TIPO_TEXTO = 'texto';
+const TIPO_NAO_SUPORTADO = 'nao_suportado';
+
+const HANDOFF_FAILURE_MESSAGE =
+  'Não consegui entregar sua mensagem agora. Tente de novo em alguns minutos.';
+// Numa conversa com atendente a pessoa manda várias mensagens seguidas; o
+// aviso de falha sai uma vez e só volta depois desse intervalo.
+const HANDOFF_FAILURE_INTERVAL_MS = 10 * 60 * 1000;
 
 const ATENDIMENTO_BUTTON = Object.freeze({
   text: '💬 Atendimento',
   callback_data: `${CALLBACK_PREFIX}${MENU_OPCAO_ID}`
 });
+
+// Mensagens de serviço do Telegram (o chat avisando algo, não a pessoa
+// falando). Não são repassadas: não há nada para o atendente ver.
+const SERVICE_MESSAGE_KEYS = [
+  'new_chat_members', 'left_chat_member', 'new_chat_title', 'new_chat_photo',
+  'delete_chat_photo', 'group_chat_created', 'supergroup_chat_created',
+  'channel_chat_created', 'message_auto_delete_timer_changed',
+  'migrate_to_chat_id', 'migrate_from_chat_id', 'pinned_message',
+  'successful_payment', 'refunded_payment', 'users_shared', 'chat_shared',
+  'write_access_allowed', 'connected_website', 'passport_data',
+  'proximity_alert_triggered', 'boost_added', 'chat_background_set',
+  'forum_topic_created', 'forum_topic_edited', 'forum_topic_closed',
+  'forum_topic_reopened', 'general_forum_topic_hidden',
+  'general_forum_topic_unhidden', 'giveaway_created', 'giveaway',
+  'giveaway_winners', 'giveaway_completed', 'video_chat_scheduled',
+  'video_chat_started', 'video_chat_ended', 'video_chat_participants_invited',
+  'web_app_data'
+];
 
 // Aceita 'true' e '1'. Qualquer outro valor (inclusive ausente) mantém o
 // atendimento desligado.
@@ -54,6 +94,14 @@ function signBody(secret, timestamp, body) {
     .createHmac('sha256', String(secret ?? ''))
     .update(`${timestamp}.${body}`)
     .digest('hex');
+}
+
+function isHumanState(estado) {
+  return String(estado ?? '').trim().toLowerCase() === HUMAN_STATE;
+}
+
+function isServiceMessage(msg) {
+  return SERVICE_MESSAGE_KEYS.some((key) => msg?.[key] !== undefined);
 }
 
 function buttonLabel(button) {
@@ -115,10 +163,14 @@ function buildInlineKeyboard(botoes) {
   return rows.length > 0 ? { inline_keyboard: rows } : null;
 }
 
-// Estado em memória, por telegramId, com expiração de 30 minutos. Perder o
-// estado num reinício só faz a conversa recomeçar do menu.
-function createStateStore({ ttlMs = STATE_TTL_MS, now = Date.now } = {}) {
+// Estado em memória, por telegramId. O prazo é de 30 minutos no atendimento
+// automático e de 7 dias quando o portal devolve estado "humano".
+function createStateStore({ ttlMs = STATE_TTL_MS, humanTtlMs = HUMAN_STATE_TTL_MS, now = Date.now } = {}) {
   const states = new Map();
+
+  function expired(entry, at) {
+    return at - entry.updatedAt > entry.ttlMs;
+  }
 
   function get(telegramId) {
     const key = String(telegramId);
@@ -128,7 +180,7 @@ function createStateStore({ ttlMs = STATE_TTL_MS, now = Date.now } = {}) {
       return null;
     }
 
-    if (now() - entry.updatedAt > ttlMs) {
+    if (expired(entry, now())) {
       states.delete(key);
       return null;
     }
@@ -139,15 +191,20 @@ function createStateStore({ ttlMs = STATE_TTL_MS, now = Date.now } = {}) {
   return {
     get,
     save(telegramId, { estado = null, estadoAtualizadoEm = null } = {}) {
-      states.set(String(telegramId), { estado, estadoAtualizadoEm, updatedAt: now() });
+      states.set(String(telegramId), {
+        estado,
+        estadoAtualizadoEm,
+        updatedAt: now(),
+        ttlMs: isHumanState(estado) ? humanTtlMs : ttlMs
+      });
     },
     clear(telegramId) {
       states.delete(String(telegramId));
     },
     cleanup() {
-      const limit = now();
+      const at = now();
       for (const [key, entry] of states.entries()) {
-        if (limit - entry.updatedAt > ttlMs) {
+        if (expired(entry, at)) {
           states.delete(key);
         }
       }
@@ -224,27 +281,124 @@ function createAtendimento({
     `O atendimento automático está indisponível agora. Fale com a gente em ${supportUsername}.`;
 
   const state = createStateStore({ now });
-  const inFlight = new Set();
-  const lastCallAt = new Map();
+  // Uma fila por pessoa: nada roda em paralelo para o mesmo telegramId.
+  const runners = new Map();
+  const handoffFailureAt = new Map();
+
+  function pruneHandoffFailures() {
+    const at = now();
+    for (const [key, timestamp] of handoffFailureAt.entries()) {
+      if (at - timestamp >= HANDOFF_FAILURE_INTERVAL_MS) {
+        handoffFailureAt.delete(key);
+      }
+    }
+  }
 
   const cleanupInterval = enabled && startCleanup
-    ? setInterval(() => state.cleanup(), STATE_CLEANUP_INTERVAL_MS)
+    ? setInterval(() => {
+      state.cleanup();
+      pruneHandoffFailures();
+    }, STATE_CLEANUP_INTERVAL_MS)
     : null;
 
   if (cleanupInterval && typeof cleanupInterval.unref === 'function') {
     cleanupInterval.unref();
   }
 
-  async function sendUnavailable(chatId) {
+  // --- fila por pessoa ------------------------------------------------------
+
+  function isBusy(key) {
+    const runner = runners.get(key);
+    return Boolean(runner && runner.running);
+  }
+
+  async function pump(key, runner) {
+    runner.running = true;
+
     try {
-      await safeSendMessage(chatId, unavailableMessage, {}, 1, 'atendimento_unavailable');
+      while (runner.items.length > 0) {
+        const { job, resolve } = runner.items.shift();
+        let result;
+
+        try {
+          result = await job();
+        } catch (error) {
+          // Rede de segurança: a fila não pode parar por causa de uma
+          // mensagem, e nada daqui sobe para o handler do Telegram.
+          logger.error('atendimento_queue_job_error', {
+            telegram_id: maskTelegramId(key),
+            error: error?.message
+          });
+          result = { ok: false, error: true };
+        }
+
+        resolve(result);
+      }
+    } finally {
+      runner.running = false;
+
+      if (runner.items.length === 0) {
+        runners.delete(key);
+      }
+    }
+  }
+
+  // Devolve a promessa do resultado, ou null quando a fila está cheia.
+  function enqueue(key, job) {
+    let runner = runners.get(key);
+
+    if (!runner) {
+      runner = { items: [], running: false };
+      runners.set(key, runner);
+    }
+
+    if (runner.items.length >= MAX_QUEUED_MESSAGES) {
+      return null;
+    }
+
+    const pending = new Promise((resolve) => {
+      runner.items.push({ job, resolve });
+    });
+
+    if (!runner.running) {
+      pump(key, runner);
+    }
+
+    return pending;
+  }
+
+  // --- envio ----------------------------------------------------------------
+
+  async function sendSafely(chatId, message, context) {
+    try {
+      await safeSendMessage(chatId, message, {}, 1, context);
     } catch (error) {
       logger.error('atendimento_send_error', {
         telegram_id: maskTelegramId(chatId),
-        context: 'unavailable',
+        context,
         error: error?.message
       });
     }
+  }
+
+  // Na conversa com atendente o aviso de falha sai uma vez a cada 10 minutos
+  // por pessoa; no atendimento automático vale a mensagem de indisponível.
+  async function sendFailureNotice(chatId, telegramId, humano) {
+    if (!humano) {
+      await sendSafely(chatId, unavailableMessage, 'atendimento_unavailable');
+      return;
+    }
+
+    const key = String(telegramId);
+    const last = handoffFailureAt.get(key);
+
+    if (last !== undefined && now() - last < HANDOFF_FAILURE_INTERVAL_MS) {
+      logger.info('atendimento_handoff_failure_suppressed', { telegram_id: maskTelegramId(telegramId) });
+      return;
+    }
+
+    handoffFailureAt.set(key, now());
+    await sendSafely(chatId, HANDOFF_FAILURE_MESSAGE, 'atendimento_handoff_failure');
   }
 
   async function answerCallback(query) {
@@ -284,14 +438,18 @@ function createAtendimento({
     }
   }
 
-  async function callPortal(payload, { telegramId, opcaoId }) {
+  async function callPortal(payload, { telegramId, opcaoId, tipo }) {
     const url = env?.PORTAL_ATENDIMENTO_URL || DEFAULT_PORTAL_URL;
     const secret = env?.TELEGRAM_ATENDIMENTO_SECRET || '';
     const body = JSON.stringify(payload);
     const timestamp = Math.floor(now() / 1000).toString();
     const startedAt = Date.now();
 
-    const logBase = { telegram_id: maskTelegramId(telegramId), opcao_id: opcaoId ?? null };
+    const logBase = {
+      telegram_id: maskTelegramId(telegramId),
+      tipo: tipo ?? null,
+      opcao_id: opcaoId ?? null
+    };
 
     try {
       const response = await postJson(url, {
@@ -360,6 +518,8 @@ function createAtendimento({
     }
   }
 
+  // mensagens vazio é o caso normal durante a conversa com o atendente: o
+  // portal gravou a mensagem e a resposta vem dele, direto pela Bot API.
   async function deliver(chatId, data, nome) {
     const mensagens = Array.isArray(data?.mensagens) ? data.mensagens : [];
 
@@ -391,40 +551,26 @@ function createAtendimento({
     await runAcao(chatId, data?.acao, nome);
   }
 
-  async function handleTurn({ chatId, telegramId, nome, texto = null, opcaoId = null }) {
+  async function handleTurn({
+    chatId,
+    telegramId,
+    nome,
+    texto = null,
+    opcaoId = null,
+    tipo = null,
+    mensagemId = null
+  }) {
     const key = String(telegramId);
-
-    // Toques repetidos no mesmo botão são ignorados enquanto a chamada
-    // anterior não volta.
-    if (inFlight.has(key)) {
-      logger.info('atendimento_call_skipped', {
-        telegram_id: maskTelegramId(telegramId),
-        opcao_id: opcaoId,
-        reason: 'in_flight'
-      });
-      return { ok: false, skipped: 'in_flight' };
-    }
-
-    const last = lastCallAt.get(key);
-
-    if (last !== undefined && now() - last < MIN_CALL_INTERVAL_MS) {
-      logger.info('atendimento_call_skipped', {
-        telegram_id: maskTelegramId(telegramId),
-        opcao_id: opcaoId,
-        reason: 'rate_limited'
-      });
-      return { ok: false, skipped: 'rate_limited' };
-    }
-
-    inFlight.add(key);
-    lastCallAt.set(key, now());
+    let storedEstado = null;
 
     try {
       const stored = state.get(key);
+      storedEstado = stored?.estado ?? null;
+
       const payload = {
         telegramId: key,
         nome: nome ? String(nome) : null,
-        estado: stored?.estado ?? null,
+        estado: storedEstado,
         estadoAtualizadoEm: stored?.estadoAtualizadoEm ?? null,
         email: await resolveEmail(telegramId)
       };
@@ -432,13 +578,18 @@ function createAtendimento({
       if (opcaoId !== null && opcaoId !== undefined) {
         payload.opcaoId = String(opcaoId);
       } else {
-        payload.texto = String(texto ?? '');
+        // mensagemId é o message_id do Telegram: o portal usa para não gravar
+        // a mesma mensagem duas vezes.
+        payload.mensagemId = mensagemId ?? null;
+        payload.tipo = tipo ?? TIPO_TEXTO;
+        // Mensagem não suportada vai sem conteúdo, só com o tipo.
+        payload.texto = payload.tipo === TIPO_TEXTO ? String(texto ?? '') : null;
       }
 
-      const result = await callPortal(payload, { telegramId, opcaoId });
+      const result = await callPortal(payload, { telegramId, opcaoId, tipo });
 
       if (!result.ok) {
-        await sendUnavailable(chatId);
+        await sendFailureNotice(chatId, telegramId, isHumanState(storedEstado));
         return { ok: false };
       }
 
@@ -453,13 +604,12 @@ function createAtendimento({
       // Rede de segurança: nada daqui sobe para o handler do Telegram.
       logger.error('atendimento_turn_error', {
         telegram_id: maskTelegramId(telegramId),
+        tipo: tipo ?? null,
         opcao_id: opcaoId,
         error: error?.message
       });
-      await sendUnavailable(chatId);
+      await sendFailureNotice(chatId, telegramId, isHumanState(storedEstado));
       return { ok: false };
-    } finally {
-      inFlight.delete(key);
     }
   }
 
@@ -478,48 +628,96 @@ function createAtendimento({
     return enabled ? { inline_keyboard: [[{ ...ATENDIMENTO_BUTTON }]] } : null;
   }
 
+  // Toda mensagem entra na fila da pessoa; nenhuma é descartada enquanto
+  // couber nas 20 que podem esperar.
+  function enqueueMessage(msg, { tipo, texto = null }) {
+    const key = String(msg.chat.id);
+
+    const pending = enqueue(key, () => handleTurn({
+      chatId: msg.chat.id,
+      telegramId: msg.chat.id,
+      nome: msg?.from?.first_name,
+      texto,
+      tipo,
+      mensagemId: msg?.message_id ?? null
+    }));
+
+    if (!pending) {
+      logger.warn('atendimento_queue_full', {
+        telegram_id: maskTelegramId(key),
+        tipo,
+        max_queued: MAX_QUEUED_MESSAGES
+      });
+      return Promise.resolve({ ok: false, skipped: 'queue_full' });
+    }
+
+    return pending;
+  }
+
   async function handleCommand(msg) {
     if (!enabled || !isPrivate(msg?.chat)) {
       return { ok: false, skipped: 'disabled_or_not_private' };
     }
 
-    return handleTurn({
+    const key = String(msg.chat.id);
+
+    if (isBusy(key)) {
+      logger.info('atendimento_call_skipped', {
+        telegram_id: maskTelegramId(key),
+        opcao_id: MENU_OPCAO_ID,
+        reason: 'in_flight'
+      });
+      return { ok: false, skipped: 'in_flight' };
+    }
+
+    const pending = enqueue(key, () => handleTurn({
       chatId: msg.chat.id,
       telegramId: msg.chat.id,
       nome: msg?.from?.first_name,
       opcaoId: MENU_OPCAO_ID
-    });
+    }));
+
+    return pending || { ok: false, skipped: 'queue_full' };
   }
 
-  // Texto livre só entra quando a pessoa está em atendimento (estado guardado
-  // há menos de 30 minutos). Sem estado ativo, segue sem resposta, como hoje.
+  // Texto livre no privado vai sempre ao portal, com ou sem estado guardado:
+  // o estado em memória some num reinício e as mensagens de quem está falando
+  // com um atendente não podem se perder por causa de um deploy. O portal é
+  // quem decide se grava na conversa ou responde o atendimento automático.
   async function handleMessage(msg) {
     if (!enabled || !isPrivate(msg?.chat)) {
       return { ok: false, skipped: 'disabled_or_not_private' };
     }
 
-    const text = typeof msg?.text === 'string' ? msg.text.trim() : '';
+    if (typeof msg?.text === 'string') {
+      const text = msg.text.trim();
 
-    if (!text || text.startsWith('/')) {
-      return { ok: false, skipped: 'not_free_text' };
+      if (!text) {
+        return { ok: false, skipped: 'empty_text' };
+      }
+
+      // Comandos continuam com os handlers de hoje e não vão ao portal.
+      if (text.startsWith('/')) {
+        return { ok: false, skipped: 'command' };
+      }
+
+      return enqueueMessage(msg, { tipo: TIPO_TEXTO, texto: text });
     }
 
-    if (!state.get(msg.chat.id)) {
-      return { ok: false, skipped: 'no_active_state' };
+    if (isServiceMessage(msg)) {
+      return { ok: false, skipped: 'service_message' };
     }
 
-    return handleTurn({
-      chatId: msg.chat.id,
-      telegramId: msg.chat.id,
-      nome: msg?.from?.first_name,
-      texto: text
-    });
+    // Foto, documento, áudio, figurinha, vídeo e afins: vão ao portal sem
+    // conteúdo, só com o tipo, e o bot entrega a resposta que vier.
+    return enqueueMessage(msg, { tipo: TIPO_NAO_SUPORTADO });
   }
 
   async function handleCallbackQuery(query) {
     const data = String(query?.data ?? '');
 
-    // Os outros callbacks (verify_identity e os demais) não passam por aqui.
+    // Os outros callbacks (verify_identity, meus_canais e os demais) não
+    // passam por aqui.
     if (!enabled || !data.startsWith(CALLBACK_PREFIX)) {
       return { ok: false, skipped: 'not_atendimento' };
     }
@@ -531,14 +729,28 @@ function createAtendimento({
         return { ok: false, skipped: 'not_private' };
       }
 
+      const key = String(chat.id);
       const opcaoId = data.slice(CALLBACK_PREFIX.length).trim() || MENU_OPCAO_ID;
 
-      return await handleTurn({
+      // Toque repetido continua sendo ignorado enquanto a chamada anterior
+      // não volta — botão não é mensagem, não há nada para perder.
+      if (isBusy(key)) {
+        logger.info('atendimento_call_skipped', {
+          telegram_id: maskTelegramId(key),
+          opcao_id: opcaoId,
+          reason: 'in_flight'
+        });
+        return { ok: false, skipped: 'in_flight' };
+      }
+
+      const pending = enqueue(key, () => handleTurn({
         chatId: chat.id,
         telegramId: chat.id,
         nome: query?.from?.first_name,
         opcaoId
-      });
+      }));
+
+      return (await pending) || { ok: false, skipped: 'queue_full' };
     } finally {
       // Sempre responde, mesmo quando o portal falha, para o botão não ficar
       // "carregando".
@@ -555,6 +767,7 @@ function createAtendimento({
   return {
     enabled,
     unavailableMessage,
+    handoffFailureMessage: HANDOFF_FAILURE_MESSAGE,
     state,
     startButtons,
     startKeyboard,
@@ -573,6 +786,8 @@ module.exports = {
   signBody,
   maskTelegramId,
   isEnabled,
+  isHumanState,
+  isServiceMessage,
   normalizeAcao,
   ATENDIMENTO_BUTTON,
   CALLBACK_PREFIX,
@@ -580,5 +795,11 @@ module.exports = {
   DEFAULT_PORTAL_URL,
   REQUEST_TIMEOUT_MS,
   STATE_TTL_MS,
-  MIN_CALL_INTERVAL_MS
+  HUMAN_STATE,
+  HUMAN_STATE_TTL_MS,
+  HANDOFF_FAILURE_MESSAGE,
+  HANDOFF_FAILURE_INTERVAL_MS,
+  MAX_QUEUED_MESSAGES,
+  TIPO_TEXTO,
+  TIPO_NAO_SUPORTADO
 };
