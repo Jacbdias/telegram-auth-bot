@@ -7,6 +7,7 @@ const alerts = require('../shared/alerts');
 const metrics = require('../shared/metrics-collector');
 const { withRetry, sleep } = require('../shared/retry');
 const { decideJoinRequest } = require('./join-request-policy');
+const { buildInviteOptions } = require('./invite-options');
 const { createAtendimento } = require('./atendimento');
 
 const token = process.env.TELEGRAM_BOT_TOKEN;
@@ -211,14 +212,10 @@ async function generateInviteLinksForUser(telegramId, channels) {
 
     try {
       const expireAt = new Date(Date.now() + INVITE_DURATION_HOURS * 60 * 60 * 1000);
-      const inviteOptions = {
-        member_limit: INVITE_MEMBER_LIMIT,
-        expire_date: Math.floor(expireAt.getTime() / 1000)
-      };
-
-      if (channel.creates_join_request) {
-        inviteOptions.creates_join_request = true;
-      }
+      const inviteOptions = buildInviteOptions(channel, {
+        expireAt,
+        memberLimit: INVITE_MEMBER_LIMIT
+      });
 
       const membershipKey = `membership:${telegramIdStr}:${channel.id}`;
       let isMember = cache.get(membershipKey);
