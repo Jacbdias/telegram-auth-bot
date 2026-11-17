@@ -20,6 +20,7 @@ const defaultCache = require('../bot/cache');
 const defaultLogger = require('../shared/logger');
 const defaultMetrics = require('../shared/metrics-collector');
 const { sanitizeEmail, sanitizeText } = require('../shared/sanitize');
+const { createConsultaBloqueio, extractDadosBloqueio } = require('./portal-bloqueio');
 const {
   decideHotmartAction,
   extractSubscriberData,
@@ -41,7 +42,10 @@ function createHotmartProcessor({
   logger = defaultLogger,
   metrics = defaultMetrics,
   planMapping = process.env.HOTMART_PLAN_MAP || '',
-  defaultPlan = process.env.HOTMART_DEFAULT_PLAN || process.env.DEFAULT_PLAN || null
+  defaultPlan = process.env.HOTMART_DEFAULT_PLAN || process.env.DEFAULT_PLAN || null,
+  // Lista de bloqueados do portal. Sem TELEGRAM_ATENDIMENTO_SECRET (testes,
+  // ambiente local) não consulta nada e segue.
+  consultarBloqueio = createConsultaBloqueio({ logger })
 } = {}) {
   const mapping = normalizePlanMapping(planMapping);
 
@@ -361,6 +365,35 @@ function createHotmartProcessor({
       const err = new Error('Email não encontrado no payload');
       err.statusCode = 400;
       throw err;
+    }
+
+    // Lista de bloqueados do portal. Compra nova (ou troca de plano) de quem
+    // está na lista não libera grupos; o portal reteve a compra e o admin
+    // decide. Reembolso/cancelamento de uma compra que o portal reteve não
+    // tira o acesso de ninguém: nada foi liberado por ela, e a pessoa pode ser
+    // um assinante homônimo com outro plano.
+    const concede = decision.action === 'activation' || decision.action === 'switch_plan';
+    const dadosBloqueio = extractDadosBloqueio(payload, context);
+    if (concede || dadosBloqueio.transacao) {
+      const bloqueio = await consultarBloqueio(dadosBloqueio);
+
+      if (concede && bloqueio.bloqueado) {
+        logger.warn('webhook_hotmart_bloqueado', {
+          event_type: decision.eventType,
+          email: context.email,
+          transacao: dadosBloqueio.transacao
+        });
+        return { ignored: true, action: null, reason: 'BLOQUEADO', eventType: decision.eventType };
+      }
+
+      if (!concede && bloqueio.retida) {
+        logger.info('webhook_hotmart_compra_retida', {
+          event_type: decision.eventType,
+          email: context.email,
+          transacao: dadosBloqueio.transacao
+        });
+        return { ignored: true, action: null, reason: 'COMPRA_RETIDA', eventType: decision.eventType };
+      }
     }
 
     // SWITCH_PLAN não traz `data.product`: o plano vem de `data.plans[]`.
