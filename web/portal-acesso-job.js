@@ -85,6 +85,82 @@ async function consultarPortal({ env, postJson, now, assinantes }) {
   return parsed.resultados;
 }
 
+// Erros de convite (link antigo já usado ou expirado) não impedem a saída
+// do canal: só conta o que impede tirar a pessoa do grupo.
+const ESCOPOS_DE_CANAL = new Set(['channel', 'channels', 'telegram_bot_init', 'revoke']);
+
+/**
+ * Lê o retorno de `deactivateSubscriberByEmail` e diz o que aconteceu:
+ *   ok        saiu do cadastro e dos canais do plano
+ *   recusado  saiu do cadastro, mas o Telegram recusou (ou não havia canal)
+ *   falha     o plano não foi tirado do cadastro
+ */
+function classificarRemocao(registro) {
+  if (!registro) return { tipo: 'falha', detalhe: 'assinante não encontrado no bot' };
+  if (registro.planRevoked === false) return { tipo: 'falha', detalhe: 'o plano já não estava no cadastro' };
+
+  const contas = Array.isArray(registro.telegram) ? registro.telegram : [];
+  if (contas.length === 0) return { tipo: 'recusado', detalhe: 'sem Telegram vinculado' };
+
+  let canais = 0;
+  const erros = [];
+  for (const conta of contas) {
+    canais += Number(conta.channels_processed) || 0;
+    for (const f of conta.failures || []) {
+      if (!ESCOPOS_DE_CANAL.has(f.scope)) continue;
+      erros.push(f.channel ? `${f.channel}: ${f.error}` : String(f.error));
+    }
+  }
+
+  if (erros.length > 0) return { tipo: 'recusado', detalhe: erros.join('; ') };
+  if (canais === 0) return { tipo: 'recusado', detalhe: 'nenhum canal encontrado para o plano' };
+  return { tipo: 'ok', canais };
+}
+
+function listar(itens, formatar, restante) {
+  const linhas = itens.slice(0, restante.n).map(formatar);
+  restante.n -= linhas.length;
+  if (itens.length > linhas.length) linhas.push(`… e mais ${itens.length - linhas.length}`);
+  return linhas;
+}
+
+function montarAlerta(resumo, limite) {
+  const total = resumo.remocoes.length;
+
+  if (resumo.abortado === 'ACIMA_DO_LIMITE' || resumo.modo !== 'remover') {
+    const titulo =
+      resumo.abortado === 'ACIMA_DO_LIMITE'
+        ? `${total} remoções passam do limite de ${limite}. *Ninguém foi removido.* Confira e, se estiver certo, suba TELEGRAM\\_SYNC\\_MAX\\_REMOCOES.`
+        : `Modo simular: ${total} planos seriam removidos. Para remover de verdade, TELEGRAM\\_SYNC\\_MODO=remover.`;
+    const linhas = listar(resumo.remocoes, (r) => `• ${md(r.email)} → ${md(r.plano)}`, { n: MAX_LISTADOS_NO_ALERTA });
+    return `${titulo}\n\n${linhas.join('\n')}`;
+  }
+
+  const restante = { n: MAX_LISTADOS_NO_ALERTA };
+  const partes = [`Conferência com o portal: ${total} planos sem acesso.`];
+
+  if (resumo.ok.length > 0) {
+    const linhas = listar(
+      resumo.ok,
+      (r) => `• ${md(r.email)} → ${md(r.plano)} (${r.canais} ${r.canais === 1 ? 'canal' : 'canais'})`,
+      restante
+    );
+    partes.push(`✅ *Removidos dos grupos (${resumo.ok.length})*\n${linhas.join('\n')}`);
+  }
+  if (resumo.recusados.length > 0) {
+    const linhas = listar(resumo.recusados, (r) => `• ${md(r.email)} → ${md(r.plano)}: ${md(r.detalhe)}`, restante);
+    partes.push(
+      `⚠️ *Saíram do cadastro, mas o Telegram não confirmou (${resumo.recusados.length})*\nConfira e tire à mão.\n${linhas.join('\n')}`
+    );
+  }
+  if (resumo.falhas.length > 0) {
+    const linhas = listar(resumo.falhas, (r) => `• ${md(r.email)} → ${md(r.plano)}: ${md(r.error)}`, restante);
+    partes.push(`❌ *Não removidos (${resumo.falhas.length})*\nO bot tenta de novo amanhã.\n${linhas.join('\n')}`);
+  }
+
+  return partes.join('\n\n');
+}
+
 async function runPortalAcessoJob({
   db = defaultDb,
   logger = defaultLogger,
@@ -99,6 +175,8 @@ async function runPortalAcessoJob({
     naoEncontrados: 0,
     remocoes: [],
     removidos: 0,
+    ok: [],
+    recusados: [],
     falhas: [],
     abortado: null
   };
@@ -164,13 +242,26 @@ async function runPortalAcessoJob({
     logger.warn('portal_acesso_job_acima_do_limite', { remocoes: resumo.remocoes.length, limite });
   } else if (resumo.modo === 'remover') {
     for (const { email, plano } of resumo.remocoes) {
+      let registro;
       try {
-        await db.deactivateSubscriberByEmail(email, { plan: plano });
-        resumo.removidos++;
-        logger.info('portal_acesso_job_removido', { email, plano });
+        registro = await db.deactivateSubscriberByEmail(email, { plan: plano });
       } catch (error) {
         resumo.falhas.push({ email, plano, error: error.message });
         logger.error('portal_acesso_job_remocao_falhou', { email, plano, error: error.message });
+        continue;
+      }
+
+      const resultado = classificarRemocao(registro);
+      if (resultado.tipo === 'falha') {
+        resumo.falhas.push({ email, plano, error: resultado.detalhe });
+        logger.error('portal_acesso_job_remocao_falhou', { email, plano, error: resultado.detalhe });
+      } else if (resultado.tipo === 'recusado') {
+        resumo.recusados.push({ email, plano, detalhe: resultado.detalhe });
+        logger.warn('portal_acesso_job_telegram_recusou', { email, plano, detalhe: resultado.detalhe });
+      } else {
+        resumo.removidos++;
+        resumo.ok.push({ email, plano, canais: resultado.canais });
+        logger.info('portal_acesso_job_removido', { email, plano, canais: resultado.canais });
       }
     }
   }
@@ -181,24 +272,13 @@ async function runPortalAcessoJob({
     nao_encontrados: resumo.naoEncontrados,
     remocoes: resumo.remocoes.length,
     removidos: resumo.removidos,
+    recusados: resumo.recusados.length,
     falhas: resumo.falhas.length,
     abortado: resumo.abortado
   });
 
   if (resumo.remocoes.length > 0) {
-    const titulo =
-      resumo.abortado === 'ACIMA_DO_LIMITE'
-        ? `${resumo.remocoes.length} remoções passam do limite de ${limite}. *Ninguém foi removido.* Confira e, se estiver certo, suba TELEGRAM\\_SYNC\\_MAX\\_REMOCOES.`
-        : resumo.modo === 'remover'
-          ? `Removidos ${resumo.removidos} de ${resumo.remocoes.length} planos sem acesso no portal.`
-          : `Modo simular: ${resumo.remocoes.length} planos seriam removidos. Para remover de verdade, TELEGRAM\\_SYNC\\_MODO=remover.`;
-    const linhas = resumo.remocoes
-      .slice(0, MAX_LISTADOS_NO_ALERTA)
-      .map((r) => `• ${md(r.email)} → ${md(r.plano)}`);
-    if (resumo.remocoes.length > MAX_LISTADOS_NO_ALERTA) {
-      linhas.push(`… e mais ${resumo.remocoes.length - MAX_LISTADOS_NO_ALERTA}`);
-    }
-    await Promise.resolve(alerts.send('SYNC_TELEGRAM_PORTAL', `${titulo}\n\n${linhas.join('\n')}`, 0)).catch(() => {});
+    await Promise.resolve(alerts.send('SYNC_TELEGRAM_PORTAL', montarAlerta(resumo, limite), 0)).catch(() => {});
   }
 
   return resumo;
@@ -232,4 +312,4 @@ function stopPortalAcessoJob() {
   jobInterval = null;
 }
 
-module.exports = { runPortalAcessoJob, startPortalAcessoJob, stopPortalAcessoJob, signBody };
+module.exports = { runPortalAcessoJob, startPortalAcessoJob, stopPortalAcessoJob, signBody, classificarRemocao };
