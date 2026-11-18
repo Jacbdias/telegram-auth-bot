@@ -9,6 +9,8 @@ const { withRetry, sleep } = require('../shared/retry');
 const { decideJoinRequest } = require('./join-request-policy');
 const { buildInviteOptions } = require('./invite-options');
 const { createAtendimento } = require('./atendimento');
+const { expandirPlanosLegados } = require('../web/planos-legados');
+const { createLimpezaSemPlano, dividirMensagem } = require('./limpeza-sem-plano');
 
 const token = process.env.TELEGRAM_BOT_TOKEN;
 const rawWebAppUrl = process.env.WEB_APP_URL;
@@ -623,8 +625,8 @@ bot.onText(/\/revogar (.+)/, async (msg, match) => {
       cache.invalidatePattern(`membership:${authorizedUser.telegram_id}:`);
       await revokeExistingInvites(authorizedUser.telegram_id);
 
-      // Tenta remover de todos os canais
-      const channels = await getCachedChannelsForPlan(subscriber.plan);
+      // Tenta remover de todos os canais (nome antigo de plano vira os atuais)
+      const channels = await getCachedChannelsForPlan(expandirPlanosLegados(subscriber.plan).join(','));
       for (const channel of channels) {
         try {
           await bot.banChatMember(channel.chat_id, authorizedUser.telegram_id);
@@ -712,7 +714,10 @@ bot.onText(/\/ajuda_admin/, async (msg) => {
     `• Apaga autorização do banco\n` +
     `• Notifica o usuário sobre a remoção\n\n` +
     `💡 <b>Exemplo:</b>\n` +
-    `/revogar joao@email.com`;
+    `/revogar joao@email.com\n\n` +
+    `🧹 <b>/limpar_sem_plano</b>\n` +
+    `Lista quem está sem plano no bot mas ainda está em grupo pago. ` +
+    `Depois, /limpar_sem_plano confirmar remove.`;
 
   await safeSendMessage(chatId, helpMessage, { parse_mode: 'HTML' });
 });
@@ -787,6 +792,43 @@ bot.onText(/\/sync/, async (msg) => {
 
   } catch (error) {
     await safeSendMessage(chatId, `❌ Erro: ${error.message}`);
+  }
+});
+
+// Comando /limpar_sem_plano - quem perdeu o último plano antes da correção
+// de 18/11/2026 e ficou nos grupos. Primeiro lista; só remove com "confirmar".
+const limpezaSemPlano = createLimpezaSemPlano({ db, bot, logger });
+let limpezaEmAndamento = false;
+
+bot.onText(/^\/limpar_sem_plano(?:@\w+)?(?:\s+(confirmar))?\s*$/i, async (msg, match) => {
+  const chatId = msg.chat.id;
+  const adminIds = ['1839742847'];
+
+  if (!adminIds.includes(chatId.toString())) {
+    return await safeSendMessage(chatId, '❌ Você não tem permissão para usar este comando.');
+  }
+  if (limpezaEmAndamento) {
+    return await safeSendMessage(chatId, '⏳ Já tem uma limpeza rodando. Espere terminar.');
+  }
+
+  limpezaEmAndamento = true;
+  try {
+    const confirmar = Boolean(match && match[1]);
+    await safeSendMessage(
+      chatId,
+      confirmar ? '🧹 Removendo dos grupos...' : '🔎 Conferindo no Telegram quem ainda está nos grupos (leva alguns minutos)...'
+    );
+    const texto = confirmar
+      ? limpezaSemPlano.textoRemocao(await limpezaSemPlano.remover())
+      : limpezaSemPlano.textoConferencia(await limpezaSemPlano.conferir());
+    for (const parte of dividirMensagem(texto)) {
+      await safeSendMessage(chatId, parte, { parse_mode: 'HTML' });
+    }
+  } catch (error) {
+    logger.error('limpeza_sem_plano_falhou', { error: error.message });
+    await safeSendMessage(chatId, `❌ Erro: ${esc(error.message)}`, { parse_mode: 'HTML' });
+  } finally {
+    limpezaEmAndamento = false;
   }
 });
 
