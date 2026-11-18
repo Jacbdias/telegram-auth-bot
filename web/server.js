@@ -107,6 +107,10 @@ app.get('/health', makeRateLimitMiddleware(healthRateLimiter, 'health_check'), a
 app.use('/api/hotmart/webhook', makeRateLimitMiddleware(webhookRateLimiter, 'webhook_hotmart'));
 app.use('/api/hotmart/webhook', hotmartWebhook);
 
+// Liberação vinda do portal (lista de bloqueados). Também usa body raw.
+app.use('/api/portal/hotmart-liberado', makeRateLimitMiddleware(webhookRateLimiter, 'portal_liberacao'));
+app.use('/api/portal/hotmart-liberado', require('./portal-liberacao').createPortalLiberacaoRouter());
+
 // Middleware
 app.use(bodyParser.json({ limit: '15mb' }));
 app.use(bodyParser.urlencoded({ extended: true, limit: '15mb' }));
