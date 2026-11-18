@@ -1,5 +1,6 @@
 const { Pool } = require('pg');
 const { normalizePhone, phonesMatch } = require('./phone-utils');
+const { expandirPlanosLegados } = require('./planos-legados');
 const logger = require('../shared/logger');
 const alerts = require('../shared/alerts');
 const metrics = require('../shared/metrics-collector');
@@ -644,7 +645,11 @@ async function markInviteLinksRevokedByTelegramId(telegramId) {
 // com um plano que ela CONTINUA tendo fica de fora (ex.: "Canal - Renda
 // Turbinada" é do "Canal Renda Turbinada" e também da "Mentoria Renda
 // Turbinada"; "Milhas" é dos três VIPs). Puro, para dar para testar.
-function selectChannelsToRemove({ allChannels, planListForChannels, includeAllChannels, keptPlanList = [] }) {
+function selectChannelsToRemove({ allChannels, planListForChannels: planosRemovidos, includeAllChannels, keptPlanList: planosMantidos = [] }) {
+  // Nome antigo de plano ("FATOS DA BOLSA - CLOSE FRIENDS VIP") vira os
+  // planos atuais: sem isso nenhum canal casava e a pessoa ficava no grupo.
+  const planListForChannels = expandirPlanosLegados(planosRemovidos);
+  const keptPlanList = expandirPlanosLegados(planosMantidos);
   const keptChatIds = new Set(
     allChannels
       .filter((ch) => ch.active && keptPlanList.includes(ch.plan))
