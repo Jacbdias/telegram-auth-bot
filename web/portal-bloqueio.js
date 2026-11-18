@@ -19,9 +19,7 @@
 // o portal oscilou.
 
 const crypto = require('crypto');
-const http = require('http');
-const https = require('https');
-const { URL } = require('url');
+const { createPostJson } = require('./portal-http');
 const defaultLogger = require('../shared/logger');
 const defaultAlerts = require('../shared/alerts');
 
@@ -35,42 +33,7 @@ function signBody(secret, timestamp, body) {
   return crypto.createHmac('sha256', String(secret ?? '')).update(`${timestamp}.${body}`).digest('hex');
 }
 
-function defaultPostJson(urlString, { body, headers, timeoutMs } = {}) {
-  return new Promise((resolve, reject) => {
-    let url;
-    try {
-      url = new URL(urlString);
-    } catch (_error) {
-      reject(new Error('invalid_portal_url'));
-      return;
-    }
-
-    const transport = url.protocol === 'http:' ? http : https;
-    const request = transport.request(
-      {
-        protocol: url.protocol,
-        hostname: url.hostname,
-        port: url.port || (url.protocol === 'http:' ? 80 : 443),
-        path: `${url.pathname}${url.search}`,
-        method: 'POST',
-        headers
-      },
-      (response) => {
-        let data = '';
-        response.setEncoding('utf8');
-        response.on('data', (chunk) => {
-          data += chunk;
-          if (data.length > MAX_RESPONSE_BYTES) request.destroy(new Error('response_too_large'));
-        });
-        response.on('end', () => resolve({ status: response.statusCode, body: data }));
-      }
-    );
-
-    request.setTimeout(timeoutMs || REQUEST_TIMEOUT_MS, () => request.destroy(new Error('timeout')));
-    request.on('error', reject);
-    request.end(body);
-  });
-}
+const defaultPostJson = createPostJson({ maxResponseBytes: MAX_RESPONSE_BYTES, defaultTimeoutMs: REQUEST_TIMEOUT_MS });
 
 /** Dados de conferência de um payload da Hotmart. */
 function extractDadosBloqueio(payload = {}, context = {}) {

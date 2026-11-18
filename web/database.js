@@ -640,6 +640,24 @@ async function markInviteLinksRevokedByTelegramId(telegramId) {
 }
 
 
+// Canais de onde a pessoa sai. Na remoção por plano, um canal compartilhado
+// com um plano que ela CONTINUA tendo fica de fora (ex.: "Canal - Renda
+// Turbinada" é do "Canal Renda Turbinada" e também da "Mentoria Renda
+// Turbinada"; "Milhas" é dos três VIPs). Puro, para dar para testar.
+function selectChannelsToRemove({ allChannels, planListForChannels, includeAllChannels, keptPlanList = [] }) {
+  const keptChatIds = new Set(
+    allChannels
+      .filter((ch) => ch.active && keptPlanList.includes(ch.plan))
+      .map((ch) => String(ch.chat_id))
+  );
+  return allChannels.filter(
+    (ch) =>
+      ch.active &&
+      !keptChatIds.has(String(ch.chat_id)) &&
+      ((includeAllChannels && ch.plan === 'all') || planListForChannels.includes(ch.plan))
+  );
+}
+
 async function revokeTelegramAccess(telegramId, { plan, revokedPlans } = {}) {
   const summary = {
     telegram_id: telegramId || null,
@@ -745,11 +763,12 @@ async function revokeTelegramAccess(telegramId, { plan, revokedPlans } = {}) {
   if (bot && planListForChannels.length > 0) {
     try {
       const allChannels = await getAllChannels();
-      const userChannels = allChannels.filter(
-        (ch) =>
-          ch.active &&
-          ((includeAllChannels && ch.plan === 'all') || planListForChannels.includes(ch.plan))
-      );
+      const userChannels = selectChannelsToRemove({
+        allChannels,
+        planListForChannels,
+        includeAllChannels,
+        keptPlanList: shouldFilterByPlan ? userPlanList.filter((p) => !targetPlanList.includes(p)) : []
+      });
 
       for (const channel of userChannels) {
         if (!channel.chat_id) {
@@ -1102,6 +1121,23 @@ async function deactivateSubscriberByEmail(email, { plan } = {}) {
   } finally {
     client.release();
   }
+}
+
+// Assinantes ativos com Telegram vinculado e autorizado, para a conferência
+// diária com o portal (web/portal-acesso-job.js).
+async function listTelegramLinkedSubscribers() {
+  await schemaReady;
+  const result = await pool.query(
+    `SELECT DISTINCT s.id, s.email, s.plan
+     FROM subscribers s
+     JOIN authorized_users au ON au.subscriber_id = s.id
+     WHERE s.status = 'active'
+       AND au.authorized = true
+       AND au.telegram_id IS NOT NULL
+       AND s.email IS NOT NULL
+     ORDER BY s.id`
+  );
+  return result.rows;
 }
 
 // ============== ACESSO ATÉ O FIM DO PERÍODO PAGO ==============
@@ -1706,6 +1742,8 @@ module.exports = {
   deleteChannel,
   getAuthorizationLogs,
   deactivateSubscriberByEmail,
+  listTelegramLinkedSubscribers,
+  selectChannelsToRemove,
   // Acesso até o fim do período pago
   setPlanAccessUntil,
   clearPlanAccessUntil,
