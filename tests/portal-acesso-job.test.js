@@ -11,7 +11,9 @@ const VIP3 = 'CF VIP - FATOS DA BOLSA 3';
 const RT = 'Canal Renda Turbinada';
 const LITE = 'Close Friends LITE';
 
-function fakeDb(assinantes) {
+const SAIU = { planRevoked: true, telegram: [{ telegram_id: '9', channels_processed: 2, failures: [] }] };
+
+function fakeDb(assinantes, resposta = () => SAIU) {
   const removidos = [];
   return {
     removidos,
@@ -20,7 +22,9 @@ function fakeDb(assinantes) {
     },
     async deactivateSubscriberByEmail(email, { plan }) {
       removidos.push({ email, plan });
-      return { email, planRevoked: true };
+      const r = resposta(email, plan);
+      if (r instanceof Error) throw r;
+      return r && { email, ...r };
     }
   };
 }
@@ -188,6 +192,77 @@ test('sem segredo: não chama o portal', async () => {
   });
   assert.equal(chamou, false);
   assert.equal(resumo.abortado, 'SEM_SEGREDO');
+});
+
+test('relatório separa removidos, recusados pelo Telegram e não removidos', async () => {
+  const assinantes = [
+    { id: 1, email: 'vencido.ok@x.com', plan: VIP3 },
+    { id: 2, email: 'vencido.recusa@x.com', plan: VIP3 },
+    { id: 3, email: 'vencido.erro@x.com', plan: LITE },
+    { id: 4, email: 'vencido.semcanal@x.com', plan: LITE }
+  ];
+  const db = fakeDb(assinantes, (email) => {
+    if (email === 'vencido.recusa@x.com') {
+      return {
+        planRevoked: true,
+        telegram: [
+          {
+            telegram_id: '7',
+            channels_processed: 2,
+            failures: [
+              { scope: 'invite_link', error: 'INVITE_HASH_EXPIRED' },
+              { scope: 'channel', channel: 'Milhas', error: 'not enough rights' }
+            ]
+          }
+        ]
+      };
+    }
+    if (email === 'vencido.erro@x.com') return new Error('banco caiu');
+    if (email === 'vencido.semcanal@x.com') return { planRevoked: true, telegram: [{ telegram_id: '8', channels_processed: 0, failures: [] }] };
+    return SAIU;
+  });
+  const a = alertas();
+
+  const resumo = await runPortalAcessoJob({
+    db,
+    logger: createSilentLogger(),
+    alerts: a,
+    env: { TELEGRAM_ATENDIMENTO_SECRET: SEGREDO, TELEGRAM_SYNC_MODO: 'remover' },
+    postJson: portal(respostaVencidos).postJson
+  });
+
+  assert.equal(resumo.removidos, 1);
+  assert.deepEqual(resumo.ok, [{ email: 'vencido.ok@x.com', plano: VIP3, canais: 2 }]);
+  assert.deepEqual(
+    resumo.recusados.map((r) => [r.email, r.detalhe]),
+    [
+      ['vencido.recusa@x.com', 'Milhas: not enough rights'],
+      ['vencido.semcanal@x.com', 'nenhum canal encontrado para o plano']
+    ]
+  );
+  assert.deepEqual(resumo.falhas.map((r) => [r.email, r.error]), [['vencido.erro@x.com', 'banco caiu']]);
+
+  const msg = a.lista[0].msg;
+  assert.match(msg, /✅ \*Removidos dos grupos \(1\)\*\n• vencido\.ok@x\.com → CF VIP - FATOS DA BOLSA 3 \(2 canais\)/);
+  assert.match(msg, /⚠️ \*Saíram do cadastro, mas o Telegram não confirmou \(2\)\*/);
+  assert.match(msg, /vencido\.recusa@x\.com → CF VIP - FATOS DA BOLSA 3: Milhas: not enough rights/);
+  assert.match(msg, /❌ \*Não removidos \(1\)\*/);
+  assert.match(msg, /vencido\.erro@x\.com → Close Friends LITE: banco caiu/);
+  // Erro de convite antigo não conta como recusa.
+  assert.doesNotMatch(msg, /INVITE_HASH_EXPIRED/);
+});
+
+test('plano que já não estava no cadastro conta como não removido', async () => {
+  const db = fakeDb([{ id: 1, email: 'vencido@x.com', plan: VIP3 }], () => ({ planRevoked: false, telegram: [] }));
+  const resumo = await runPortalAcessoJob({
+    db,
+    logger: createSilentLogger(),
+    alerts: alertas(),
+    env: { TELEGRAM_ATENDIMENTO_SECRET: SEGREDO, TELEGRAM_SYNC_MODO: 'remover' },
+    postJson: portal(respostaVencidos).postJson
+  });
+  assert.equal(resumo.removidos, 0);
+  assert.equal(resumo.falhas[0].error, 'o plano já não estava no cadastro');
 });
 
 // ─── Canal compartilhado na remoção por plano ─────────────────────────────

@@ -802,8 +802,13 @@ async function revokeTelegramAccess(telegramId, { plan, revokedPlans } = {}) {
 }
 
 
-// Remove autorização de usuário
-async function revokeAuthorization(telegramId) {
+// Remove autorização de usuário.
+//
+// `plan` informa de quais planos tirar a pessoa quando o cadastro já não tem
+// mais nenhum: a remoção do último plano apaga o plano do assinante ANTES de
+// chegar aqui, e sem plano nenhum canal era selecionado (a pessoa perdia a
+// autorização mas continuava nos grupos).
+async function revokeAuthorization(telegramId, { plan: planOverride } = {}) {
   try {
     await schemaReady;
 
@@ -816,7 +821,7 @@ async function revokeAuthorization(telegramId) {
     );
 
     const subscriberId = userData.rows[0]?.subscriber_id || null;
-    const plan = userData.rows[0]?.plan;
+    const plan = normalizePlanList(planOverride).length > 0 ? planOverride : userData.rows[0]?.plan;
 
     const revocationSummary = await revokeTelegramAccess(telegramId, { plan });
 
@@ -1092,6 +1097,10 @@ async function deactivateSubscriberByEmail(email, { plan } = {}) {
     const remainingPlansAfterUpdate = normalizePlanList(updatedSubscriber.plan);
     const shouldFullyRevoke = !isPlanScoped || remainingPlansAfterUpdate.length === 0;
 
+    // Resultado no Telegram, por conta vinculada: quem chamou consegue dizer
+    // quem saiu dos canais e quem o Telegram recusou.
+    const telegram = [];
+
     if (!isPlanScoped || planRevoked) {
       for (const row of authorizedResult.rows) {
         if (!row.telegram_id) {
@@ -1099,21 +1108,31 @@ async function deactivateSubscriberByEmail(email, { plan } = {}) {
         }
 
         try {
-          if (shouldFullyRevoke) {
-            await revokeAuthorization(row.telegram_id);
-          } else {
-            await revokeTelegramAccess(row.telegram_id, {
-              plan: updatedSubscriber.plan,
-              revokedPlans: targetPlan
-            });
-          }
+          const summary = shouldFullyRevoke
+            ? // Plano antigo do cadastro: depois do UPDATE o último plano já
+              // sumiu e, sem ele, nenhum canal seria selecionado.
+              await revokeAuthorization(row.telegram_id, { plan: subscriber.plan })
+            : await revokeTelegramAccess(row.telegram_id, {
+                plan: updatedSubscriber.plan,
+                revokedPlans: targetPlan
+              });
+          telegram.push({
+            telegram_id: row.telegram_id,
+            channels_processed: summary?.channels_processed || 0,
+            failures: summary?.failures || []
+          });
         } catch (error) {
           console.error('Erro ao revogar autorização durante desativação por email:', error);
+          telegram.push({
+            telegram_id: row.telegram_id,
+            channels_processed: 0,
+            failures: [{ scope: 'revoke', error: error.message }]
+          });
         }
       }
     }
 
-    return { ...updatedSubscriber, planRevoked };
+    return { ...updatedSubscriber, planRevoked, telegram };
   } catch (error) {
     await client.query('ROLLBACK');
     console.error('Erro ao desativar assinante por email:', error);
